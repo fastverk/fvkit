@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+// fastverk connection registry — the host->auth table the credential
+// helper consults and the GUI manages.
+//
+// A "connection" maps one or more hosts to an HTTP header carrying a
+// secret. The secret itself NEVER lives in this message (or the
+// persisted registry): only a reference to the OS keychain item that
+// holds the current access token. `fvd` owns the token lifecycle
+// (OAuth refresh); the credential helper only reads the live token.
+//
+// Persisted (prost-encoded) at <config_dir>/connections.pb and read by
+// both `fvd` and the standalone `cred_helper` (keychain-fallback path
+// when the daemon is down).
+
+package fastverk.v1;
+
+// How a connection authenticates.
+enum AuthKind {
+  // Default / unset — treated as no usable auth.
+  AUTH_KIND_UNSPECIFIED = 0;
+  // OAuth2 — refreshable. Either RFC 8628 device-code or PKCE loopback,
+  // depending on which OAuthConfig endpoints are set.
+  AUTH_KIND_OAUTH = 1;
+  // Static API key / personal access token. No refresh.
+  AUTH_KIND_API_KEY = 2;
+}
+
+// OAuth2 client + endpoint configuration for a provider.
+message OAuthConfig {
+  // OAuth2 client identifier.
+  string client_id = 1;
+  // OAuth2 client secret. Optional: public clients (PKCE) omit it.
+  string client_secret = 2;
+  // Authorization endpoint (used by the PKCE loopback flow).
+  string auth_url = 3;
+  // Token endpoint (code/device-code -> token, and refresh).
+  string token_url = 4;
+  // RFC 8628 device-authorization endpoint (preferred for a menu-bar
+  // app — no loopback server needed). Empty to force PKCE.
+  string device_auth_url = 5;
+  // Scopes to request.
+  repeated string scopes = 6;
+  // Loopback redirect URI for the PKCE flow.
+  string redirect_uri = 7;
+}
+
+// One managed connection: which hosts it covers, what header to inject,
+// and where its secret lives in the keychain.
+message Connection {
+  // Stable slug, e.g. "github", "gitlab-savvifi", "buildbuddy".
+  string id = 1;
+  // Human label, e.g. "GitHub", "GitLab (savvifi)".
+  string display_name = 2;
+  // Provider preset: "github" | "gitlab" | "buildbuddy" | "generic".
+  string provider = 3;
+  // Hosts this connection authenticates. Exact ("github.com") or a
+  // "*.suffix" wildcard ("*.github.com").
+  repeated string host_patterns = 4;
+  // HTTP header to emit, e.g. "Authorization".
+  string header = 5;
+  // Optional value prefix prepended to the secret, e.g. "Bearer ".
+  string value_prefix = 6;
+  // How this connection authenticates.
+  AuthKind auth_kind = 7;
+  // OAuth client/endpoint config; set when auth_kind == AUTH_KIND_OAUTH.
+  OAuthConfig oauth = 8;
+  // Keychain item "service" the secret is stored under — NOT the secret.
+  string keychain_service = 9;
+  // Keychain item "account" the secret is stored under — NOT the secret.
+  string keychain_account = 10;
+  // Non-secret token expiry, for status display. RFC 3339; empty when
+  // unknown or the token does not expire.
+  string token_expires_at = 11;
+  // When this connection was established. RFC 3339.
+  string connected_at = 12;
+}
+
+// The persisted host->connection registry.
+message ConnectionRegistry {
+  // All managed connections.
+  repeated Connection connections = 1;
+}

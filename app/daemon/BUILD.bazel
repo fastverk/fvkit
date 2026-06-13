@@ -1,0 +1,18 @@
+"""fvd — the fastverk daemon (gRPC over a Unix socket, wraps fvkit)."""
+
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@crates//:defs.bzl", "all_crate_deps")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fvd",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = ["//app/core:fvkit"] + all_crate_deps(
+        normal = True,
+        package_name = "app/daemon",
+    ),
+)
+
+exports_files(["Cargo.toml"])

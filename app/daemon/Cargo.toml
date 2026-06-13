@@ -1,0 +1,22 @@
+[package]
+name = "fvd"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fastverk daemon: an unprivileged user-level gRPC server (Unix socket) wrapping fvkit; single owner of ~/.bazelrc, the connection registry, and the maintenance scheduler."
+
+[[bin]]
+name = "fvd"
+path = "src/main.rs"
+
+[dependencies]
+fvkit = { path = "../core" }
+anyhow.workspace = true
+tonic.workspace = true
+prost.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

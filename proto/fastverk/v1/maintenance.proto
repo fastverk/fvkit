@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+// fastverk volume + maintenance state.
+//
+// Volumes are the managed filesystem locations fastverk provisions: one
+// for git repos + worktrees, one for Bazel caches. Maintenance is the
+// periodic cleanup `fvd` runs (cache GC, bazel clean, git gc, worktree
+// prune, update check).
+
+package fastverk.v1;
+
+// A volume fastverk manages. On macOS each is an APFS volume in the boot
+// container; on Linux/Windows the per-OS backend fills the same shape
+// (mount point + usage).
+message VolumeSpec {
+  // Stable id: "repos" | "caches".
+  string id = 1;
+  // Human label, e.g. "Bazel caches".
+  string display_name = 2;
+  // Mount point, e.g. "/Volumes/Workspace".
+  string mount_point = 3;
+  // Filesystem volume label, e.g. APFS volume "Workspace".
+  string fs_volume = 4;
+  // Optional size cap in bytes; 0 = no quota.
+  int64 quota_bytes = 5;
+}
+
+// Observed state of a managed volume.
+message VolumeState {
+  // The volume this state describes.
+  VolumeSpec spec = 1;
+  // Whether the volume exists (created), regardless of mount.
+  bool exists = 2;
+  // Whether the volume is currently mounted at its mount point.
+  bool mounted = 3;
+  // Bytes used on the volume.
+  int64 used_bytes = 4;
+  // Bytes free on the volume.
+  int64 free_bytes = 5;
+  // Backing device node, e.g. "disk3s7".
+  string device = 6;
+}
+
+// Outcome of a single maintenance task.
+message MaintenanceTask {
+  // Task name: "disk-cache-gc" | "bazel-clean" | "git-gc" |
+  // "worktree-prune" | "update-check".
+  string name = 1;
+  // Whether the task completed successfully.
+  bool ok = 2;
+  // Human-readable detail or error summary.
+  string detail = 3;
+  // Bytes reclaimed by this task (0 when not applicable).
+  int64 bytes_reclaimed = 4;
+}
+
+// Result of one maintenance run.
+message MaintenanceReport {
+  // When the run started. RFC 3339.
+  string started_at = 1;
+  // When the run finished. RFC 3339; empty while still running.
+  string finished_at = 2;
+  // Whether this was a no-op preview (nothing was actually changed).
+  bool validate_only = 3;
+  // Per-task outcomes.
+  repeated MaintenanceTask tasks = 4;
+}

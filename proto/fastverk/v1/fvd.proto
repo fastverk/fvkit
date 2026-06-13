@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+// fvd — the fastverk daemon's gRPC contract.
+//
+// An UNPRIVILEGED user-level daemon (a LaunchAgent on macOS) wraps the
+// `fvkit` core library and is the single owner of mutable state:
+// ~/.bazelrc, the connection registry, the OAuth token-refresh loop,
+// and the maintenance scheduler. The menu-bar GUI (`fastverk`), the
+// CLI (`fv`), and the Bazel credential helper (`cred_helper`) are all
+// thin clients reaching fvd over a Unix-domain socket.
+//
+// P0: every RPC is unary. Server-streaming variants (live device-code /
+// volume-create / maintenance / update progress) land in later phases;
+// the request/response shapes stay stable.
+
+package fastverk.v1;
+
+import "fastverk/v1/connection.proto";
+import "fastverk/v1/maintenance.proto";
+
+// The fastverk daemon control surface.
+service Fvd {
+  // Resolve the auth header for a Bazel fetch URI (the cred_helper's hot
+  // path). Refreshes the token first if it has expired. `found = false`
+  // => the caller should proceed anonymously.
+  rpc GetCredentials(GetCredentialsRequest) returns (GetCredentialsResponse);
+
+  // List all managed connections (secrets stripped).
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+
+  // Begin + complete an auth flow for a provider, store the token in the
+  // keychain, and persist the connection. (Named ConnectProvider: a bare
+  // "Connect" RPC collides with the generated tonic client constructor.)
+  rpc ConnectProvider(ConnectProviderRequest) returns (ConnectProviderResponse);
+
+  // Remove a connection and delete its keychain secret.
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+
+  // Report the state of every managed volume.
+  rpc VolumeStatus(VolumeStatusRequest) returns (VolumeStatusResponse);
+
+  // Create + mount a managed volume. Triggers an on-demand admin
+  // elevation prompt (macOS: osascript) inside the daemon.
+  rpc VolumeCreate(VolumeCreateRequest) returns (VolumeCreateResponse);
+
+  // Render the fastverk-managed region of ~/.bazelrc without writing it.
+  rpc BazelrcPreview(BazelrcPreviewRequest) returns (BazelrcPreviewResponse);
+
+  // Splice the managed region into ~/.bazelrc (idempotent).
+  rpc BazelrcApply(BazelrcApplyRequest) returns (BazelrcApplyResponse);
+
+  // Run maintenance now and return the report.
+  rpc MaintainNow(MaintainNowRequest) returns (MaintenanceReport);
+
+  // Snapshot the daemon + system state for the tray/CLI.
+  rpc GetStatus(GetStatusRequest) returns (StatusResponse);
+
+  // Check the release channel for a newer version.
+  rpc CheckUpdate(CheckUpdateRequest) returns (CheckUpdateResponse);
+
+  // Download, verify, and apply the latest release.
+  rpc ApplyUpdate(ApplyUpdateRequest) returns (ApplyUpdateResponse);
+}
+
+// Request to resolve credentials for a fetch URI.
+message GetCredentialsRequest {
+  // The Bazel cred-helper request URI, e.g. "https://github.com/o/r".
+  string uri = 1;
+}
+// Resolved credential header, or `found = false` for anonymous.
+message GetCredentialsResponse {
+  // Whether a matching connection with a usable secret was found.
+  bool found = 1;
+  // Header name to emit, e.g. "Authorization".
+  string header = 2;
+  // Full header value incl. any prefix, e.g. "Bearer ghp_…".
+  string value = 3;
+}
+
+// Request to list connections.
+message ListConnectionsRequest {}
+// The managed connections (secrets stripped).
+message ListConnectionsResponse {
+  // All connections in the registry.
+  repeated Connection connections = 1;
+}
+
+// Request to establish a connection to a provider.
+message ConnectProviderRequest {
+  // Provider preset to base the connection on, or "generic".
+  string provider = 1;
+  // Stable id override (used for "generic" / custom endpoints).
+  string id = 2;
+  // Human label override.
+  string display_name = 3;
+  // Host patterns this connection should authenticate.
+  repeated string host_patterns = 4;
+  // HTTP header to emit.
+  string header = 5;
+  // Optional value prefix, e.g. "Bearer ".
+  string value_prefix = 6;
+  // How the connection authenticates.
+  AuthKind auth_kind = 7;
+  // OAuth config for AUTH_KIND_OAUTH connections.
+  OAuthConfig oauth = 8;
+  // For AUTH_KIND_API_KEY: the key value to store. Never persisted to
+  // the registry — written straight to the keychain.
+  string api_key = 9;
+}
+// The established connection, plus any interactive instruction.
+message ConnectProviderResponse {
+  // The persisted connection (secrets stripped).
+  Connection connection = 1;
+  // Human-facing instruction when an interactive step is required (e.g.
+  // a device-code + verification URL). Empty when complete.
+  string message = 2;
+}
+
+// Request to remove a connection.
+message DisconnectRequest {
+  // Id of the connection to remove.
+  string id = 1;
+}
+// Result of a disconnect.
+message DisconnectResponse {
+  // Whether a connection was found and removed.
+  bool removed = 1;
+}
+
+// Request for volume status.
+message VolumeStatusRequest {}
+// State of every managed volume.
+message VolumeStatusResponse {
+  // Per-volume observed state.
+  repeated VolumeState volumes = 1;
+}
+
+// Request to create a managed volume.
+message VolumeCreateRequest {
+  // Which volume to create: "repos" | "caches" | "all".
+  string id = 1;
+}
+// Result of a volume-create.
+message VolumeCreateResponse {
+  // State of the affected volumes after creation.
+  repeated VolumeState volumes = 1;
+  // Human-facing detail or error summary.
+  string message = 2;
+}
+
+// Request to preview the managed ~/.bazelrc region.
+message BazelrcPreviewRequest {}
+// The rendered managed region.
+message BazelrcPreviewResponse {
+  // The fastverk-managed region only (not the whole file).
+  string managed_block = 1;
+  // Absolute path to ~/.bazelrc.
+  string path = 2;
+}
+
+// Request to apply the managed region to ~/.bazelrc.
+message BazelrcApplyRequest {
+  // When true, compute the diff but do not write.
+  bool validate_only = 1;
+}
+// Result of a bazelrc apply.
+message BazelrcApplyResponse {
+  // Whether the managed region changed (or would change).
+  bool changed = 1;
+  // Unified diff of the managed region, when changed.
+  string diff = 2;
+}
+
+// Request to run maintenance now.
+message MaintainNowRequest {
+  // When true, report what would be done without changing anything.
+  bool validate_only = 1;
+  // Restrict to these task names; empty = all tasks.
+  repeated string only = 2;
+}
+
+// Request for a status snapshot.
+message GetStatusRequest {}
+// Daemon + system status for the tray/CLI.
+message StatusResponse {
+  // Daemon version.
+  string version = 1;
+  // State of every managed volume.
+  repeated VolumeState volumes = 2;
+  // Number of configured connections.
+  int32 connection_count = 3;
+  // The most recent maintenance run, if any.
+  MaintenanceReport last_maintenance = 4;
+  // Whether a newer release is available.
+  bool update_available = 5;
+  // Latest available version (when known).
+  string latest_version = 6;
+}
+
+// Request to check for updates.
+message CheckUpdateRequest {}
+// Result of an update check.
+message CheckUpdateResponse {
+  // Whether a newer release is available.
+  bool update_available = 1;
+  // The currently-installed version.
+  string current_version = 2;
+  // The latest available version.
+  string latest_version = 3;
+  // Download URL for the latest artifact.
+  string download_url = 4;
+  // Release notes for the latest version.
+  string notes = 5;
+}
+
+// Request to apply the latest update.
+message ApplyUpdateRequest {}
+// Result of starting an update.
+message ApplyUpdateResponse {
+  // Whether the update was initiated.
+  bool started = 1;
+  // Human-facing detail or error summary.
+  string message = 2;
+}

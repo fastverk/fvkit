@@ -1,0 +1,71 @@
+//! User-facing fastverk settings, persisted as TOML.
+//!
+//! These are the knobs that drive the generated `~/.bazelrc` and the
+//! managed volumes. Secrets are NOT here — those live in the keychain,
+//! referenced from the connection registry (see [`crate::connections`]).
+
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+use crate::paths;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    /// Bazel `--output_user_root` (per-workspace output bases live here).
+    pub output_user_root: PathBuf,
+    /// Bazel `--disk_cache`.
+    pub disk_cache: PathBuf,
+    /// Module registries, in resolution order.
+    pub registries: Vec<String>,
+    /// Where managed git repos + worktrees live.
+    pub repos_root: PathBuf,
+    /// Pinned bazel version (drives `USE_BAZEL_VERSION` / `.bazelversion`).
+    pub bazel_version: String,
+    /// Disk-cache GC threshold in gibibytes (0 disables GC).
+    pub disk_cache_max_gib: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            output_user_root: PathBuf::from("/Volumes/Cache/Bazel/Workspaces"),
+            disk_cache: PathBuf::from("/Volumes/Cache/Bazel/disk-cache"),
+            registries: vec![
+                "file:///Volumes/Workspace/fastverk/repos/bazel-registry".to_string(),
+                "https://bcr.bazel.build/".to_string(),
+            ],
+            repos_root: PathBuf::from("/Volumes/Workspace"),
+            bazel_version: "9.1.0".to_string(),
+            disk_cache_max_gib: 50,
+        }
+    }
+}
+
+impl Config {
+    /// `<config_dir>/config.toml`.
+    pub fn path() -> Result<PathBuf> {
+        Ok(paths::config_dir()?.join("config.toml"))
+    }
+
+    /// Load the persisted config, or defaults when none exists yet.
+    pub fn load() -> Result<Self> {
+        let p = Self::path()?;
+        if p.exists() {
+            let s = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
+            toml::from_str(&s).with_context(|| format!("parse {}", p.display()))
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    /// Persist the config to `<config_dir>/config.toml`.
+    pub fn save(&self) -> Result<()> {
+        paths::ensure_config_dir()?;
+        let p = Self::path()?;
+        let s = toml::to_string_pretty(self).context("serialize config")?;
+        std::fs::write(&p, s).with_context(|| format!("write {}", p.display()))
+    }
+}

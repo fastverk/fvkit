@@ -1,0 +1,46 @@
+"""fvkit — fastverk core library.
+
+Proto codegen runs via cargo_build_script + build.rs (tonic-build), the
+same convention services/* use, so `cargo build` and `bazel build`
+produce identical bindings. The build script data-deps the .proto
+sources exported by //proto/fastverk/v1 and walks `../../proto/...` from
+CARGO_MANIFEST_DIR = `app/core`.
+"""
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@crates//:defs.bzl", "all_crate_deps")
+
+package(default_visibility = ["//visibility:public"])
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    data = [
+        "//proto/fastverk/v1:fvd.proto",
+        "//proto/fastverk/v1:connection.proto",
+        "//proto/fastverk/v1:maintenance.proto",
+    ],
+    edition = "2021",
+    build_script_env = {
+        "PROTOC": "$(execpath @protobuf//:protoc)",
+    },
+    tools = ["@protobuf//:protoc"],
+    deps = all_crate_deps(build = True, package_name = "app/core"),
+)
+
+rust_library(
+    name = "fvkit",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    deps = [":build_script"] + all_crate_deps(normal = True, package_name = "app/core"),
+)
+
+rust_test(
+    name = "fvkit_test",
+    crate = ":fvkit",
+    edition = "2021",
+)
+
+exports_files(["Cargo.toml", "build.rs"])
