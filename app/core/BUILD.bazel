@@ -20,6 +20,7 @@ cargo_build_script(
         "//proto/fastverk/v1:fvd.proto",
         "//proto/fastverk/v1:connection.proto",
         "//proto/fastverk/v1:maintenance.proto",
+        "//proto/fastverk/v1:repos.proto",
     ],
     edition = "2021",
     build_script_env = {

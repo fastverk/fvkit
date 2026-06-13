@@ -17,8 +17,10 @@ use fvkit::proto::{
     BazelrcPreviewRequest, BazelrcPreviewResponse, CheckUpdateRequest, CheckUpdateResponse,
     ConnectProviderRequest, ConnectProviderResponse, DisconnectRequest, DisconnectResponse,
     GetCredentialsRequest, GetCredentialsResponse, GetStatusRequest, ListConnectionsRequest,
-    ListConnectionsResponse, MaintainNowRequest, MaintenanceReport, StatusResponse,
-    VolumeCreateRequest, VolumeCreateResponse, VolumeStatusRequest, VolumeStatusResponse,
+    ListConnectionsResponse, MaintainNowRequest, MaintenanceReport, RepoSyncReport,
+    ReposStatusRequest, ReposStatusResponse, ReposSyncRequest, StatusResponse, VolumeCreateRequest,
+    VolumeCreateResponse, VolumeStatusRequest, VolumeStatusResponse, Worktree, WorktreeAddRequest,
+    WorktreeListRequest, WorktreeListResponse, WorktreeRemoveRequest, WorktreeRemoveResponse,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -125,6 +127,90 @@ impl Fvd for FvdService {
         Err(Status::unimplemented(
             "TODO(P1): splice managed region into ~/.bazelrc",
         ))
+    }
+
+    async fn repos_sync(
+        &self,
+        request: Request<ReposSyncRequest>,
+    ) -> Result<Response<RepoSyncReport>, Status> {
+        let req = request.into_inner();
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        let org = if req.org.is_empty() { cfg.org.clone() } else { req.org };
+        let forge = if req.forge.is_empty() {
+            cfg.forge.clone()
+        } else {
+            req.forge
+        };
+        let specs =
+            fvkit::repos::enumerate(&forge, &org, req.include_archived).map_err(internal)?;
+        let report = fvkit::repos::sync(
+            &cfg.repos_dir(),
+            &specs,
+            &org,
+            &forge,
+            &fvkit::repos::SyncOpts {
+                pull: req.pull,
+                validate_only: req.validate_only,
+                meta_repo_name: cfg.meta_repo_name(),
+            },
+        )
+        .map_err(internal)?;
+        Ok(Response::new(report))
+    }
+
+    async fn repos_status(
+        &self,
+        request: Request<ReposStatusRequest>,
+    ) -> Result<Response<ReposStatusResponse>, Status> {
+        let req = request.into_inner();
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        let org = if req.org.is_empty() { cfg.org.clone() } else { req.org };
+        let forge = if req.forge.is_empty() {
+            cfg.forge.clone()
+        } else {
+            req.forge
+        };
+        let specs = fvkit::repos::enumerate(&forge, &org, true).map_err(internal)?;
+        let repos = fvkit::repos::status(&cfg.repos_dir(), &specs);
+        Ok(Response::new(ReposStatusResponse { repos }))
+    }
+
+    async fn worktree_list(
+        &self,
+        request: Request<WorktreeListRequest>,
+    ) -> Result<Response<WorktreeListResponse>, Status> {
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        let worktrees =
+            fvkit::repos::worktree_list(&cfg.repos_dir(), &request.into_inner().repo)
+                .map_err(internal)?;
+        Ok(Response::new(WorktreeListResponse { worktrees }))
+    }
+
+    async fn worktree_add(
+        &self,
+        request: Request<WorktreeAddRequest>,
+    ) -> Result<Response<Worktree>, Status> {
+        let req = request.into_inner();
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        let wt = fvkit::repos::worktree_add(
+            &cfg.repos_dir(),
+            &cfg.worktrees_dir(),
+            &req.repo,
+            &req.branch,
+        )
+        .map_err(internal)?;
+        Ok(Response::new(wt))
+    }
+
+    async fn worktree_remove(
+        &self,
+        request: Request<WorktreeRemoveRequest>,
+    ) -> Result<Response<WorktreeRemoveResponse>, Status> {
+        let req = request.into_inner();
+        let removed =
+            fvkit::repos::worktree_remove(std::path::Path::new(&req.path), req.force)
+                .map_err(internal)?;
+        Ok(Response::new(WorktreeRemoveResponse { removed }))
     }
 
     async fn maintain_now(

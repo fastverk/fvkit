@@ -34,12 +34,19 @@ polyglot_proto(
 )
 
 polyglot_proto(
+    name = "repos",
+    src = "repos.proto",
+    languages = ["rust"],
+)
+
+polyglot_proto(
     name = "fvd",
     src = "fvd.proto",
     languages = ["rust"],
     deps = [
         ":connection_proto",
         ":maintenance_proto",
+        ":repos_proto",
     ],
 )
 
@@ -60,12 +67,19 @@ aip_proto_library(
 )
 
 aip_proto_library(
+    name = "repos_aip_proto",
+    srcs = ["repos.proto"],
+    strip_import_prefix = "/proto",
+)
+
+aip_proto_library(
     name = "fvd_aip_proto",
     srcs = ["fvd.proto"],
     strip_import_prefix = "/proto",
     deps = [
         ":connection_aip_proto",
         ":maintenance_aip_proto",
+        ":repos_aip_proto",
     ],
 )
 
@@ -112,6 +126,12 @@ aip_proto_lint(
 aip_proto_lint(
     name = "maintenance_aip_lint",
     proto = ":maintenance_aip_proto",
+    disable_rules = _DAEMON_API_DISABLES,
+)
+
+aip_proto_lint(
+    name = "repos_aip_lint",
+    proto = ":repos_aip_proto",
     disable_rules = _DAEMON_API_DISABLES,
 )
 

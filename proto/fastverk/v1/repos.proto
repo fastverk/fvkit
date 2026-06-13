@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+// fastverk repo + worktree state.
+//
+// The repo-sync value prop: keep `repos/<name>` on the repos volume in
+// lockstep with every project in the org/group (GitHub org or GitLab
+// group), and manage each repo's git worktrees under a single worktrees
+// root. `fvd` owns scheduled sync + worktree ops; `fv` calls the same
+// `fvkit` core directly for one-shot use.
+
+package fastverk.v1;
+
+// A repo in the managed org/group and where it lives on the repos volume.
+message RepoSpec {
+  // Org/group repo name, e.g. "rules_lean".
+  string name = 1;
+  // Folder under repos/, e.g. ".github" is checked out as "dotgithub".
+  string dir = 2;
+  // Clone URL (ssh by default).
+  string clone_url = 3;
+  // Source forge: "github" | "gitlab".
+  string forge = 4;
+  // Whether the upstream repo is private.
+  bool is_private = 5;
+}
+
+// Observed state of a managed repo checkout.
+message RepoState {
+  // The repo this state describes.
+  RepoSpec spec = 1;
+  // Whether the repo is checked out on disk.
+  bool present = 2;
+  // Current commit (short hash); empty when absent.
+  string head = 3;
+  // Current branch; empty when detached or absent.
+  string branch = 4;
+  // Whether the working tree has uncommitted changes.
+  bool dirty = 5;
+}
+
+// Outcome of syncing one repo.
+message RepoSyncOutcome {
+  // Repo name.
+  string name = 1;
+  // One of: "cloned" | "updated" | "up-to-date" | "skipped-dirty" |
+  // "skipped-detached" | "skipped-present" | "failed".
+  string action = 2;
+  // Human-readable detail or error summary.
+  string detail = 3;
+}
+
+// Result of a repos-sync run.
+message RepoSyncReport {
+  // Org/group that was synced.
+  string org = 1;
+  // Forge: "github" | "gitlab".
+  string forge = 2;
+  // When the run started. RFC 3339.
+  string started_at = 3;
+  // When the run finished. RFC 3339.
+  string finished_at = 4;
+  // Whether this was a preview (no clone/pull performed).
+  bool validate_only = 5;
+  // Per-repo outcomes.
+  repeated RepoSyncOutcome outcomes = 6;
+}
+
+// A git worktree of a managed repo.
+message Worktree {
+  // The repo (dir name under repos/) this worktree belongs to.
+  string repo = 1;
+  // Absolute path of the worktree.
+  string path = 2;
+  // Checked-out branch; empty when detached.
+  string branch = 3;
+  // Current commit (short hash).
+  string head = 4;
+  // Whether the worktree is the repo's primary checkout (vs. a linked one).
+  bool is_primary = 5;
+}

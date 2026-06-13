@@ -17,6 +17,7 @@ package fastverk.v1;
 
 import "fastverk/v1/connection.proto";
 import "fastverk/v1/maintenance.proto";
+import "fastverk/v1/repos.proto";
 
 // The fastverk daemon control surface.
 service Fvd {
@@ -48,6 +49,22 @@ service Fvd {
 
   // Splice the managed region into ~/.bazelrc (idempotent).
   rpc BazelrcApply(BazelrcApplyRequest) returns (BazelrcApplyResponse);
+
+  // Clone/pull every org-group repo into repos/<name> on the repos
+  // volume, keeping it in sync with the forge.
+  rpc ReposSync(ReposSyncRequest) returns (RepoSyncReport);
+
+  // Observed state of every managed repo checkout.
+  rpc ReposStatus(ReposStatusRequest) returns (ReposStatusResponse);
+
+  // List git worktrees across managed repos.
+  rpc WorktreeList(WorktreeListRequest) returns (WorktreeListResponse);
+
+  // Create a worktree for a repo under the worktrees root.
+  rpc WorktreeAdd(WorktreeAddRequest) returns (Worktree);
+
+  // Remove a worktree by path.
+  rpc WorktreeRemove(WorktreeRemoveRequest) returns (WorktreeRemoveResponse);
 
   // Run maintenance now and return the report.
   rpc MaintainNow(MaintainNowRequest) returns (MaintenanceReport);
@@ -169,6 +186,65 @@ message BazelrcApplyResponse {
   bool changed = 1;
   // Unified diff of the managed region, when changed.
   string diff = 2;
+}
+
+// Request to sync the org/group into repos/.
+message ReposSyncRequest {
+  // Org/group to mirror; empty = config default.
+  string org = 1;
+  // Forge: "github" | "gitlab"; empty = "github".
+  string forge = 2;
+  // Include archived repos.
+  bool include_archived = 3;
+  // Also pull existing clean clones (vs. clone-missing only).
+  bool pull = 4;
+  // Report what would be done without cloning/pulling.
+  bool validate_only = 5;
+}
+
+// Request for repo status.
+message ReposStatusRequest {
+  // Org/group; empty = config default.
+  string org = 1;
+  // Forge: "github" | "gitlab"; empty = "github".
+  string forge = 2;
+}
+// Observed state of every managed repo.
+message ReposStatusResponse {
+  // Per-repo state.
+  repeated RepoState repos = 1;
+}
+
+// Request to list worktrees.
+message WorktreeListRequest {
+  // Restrict to one repo (dir name under repos/); empty = all.
+  string repo = 1;
+}
+// Worktrees across managed repos.
+message WorktreeListResponse {
+  // All matching worktrees.
+  repeated Worktree worktrees = 1;
+}
+
+// Request to add a worktree.
+message WorktreeAddRequest {
+  // Repo dir name under repos/.
+  string repo = 1;
+  // Branch to check out (created from the default branch if missing).
+  string branch = 2;
+}
+
+// Request to remove a worktree.
+message WorktreeRemoveRequest {
+  // Worktree path to remove.
+  string path = 1;
+  // Force removal even with uncommitted changes.
+  bool force = 2;
+}
+// Result of a worktree removal.
+message WorktreeRemoveResponse {
+  // Whether the worktree was removed.
+  bool removed = 1;
 }
 
 // Request to run maintenance now.

@@ -20,8 +20,15 @@ pub struct Config {
     pub disk_cache: PathBuf,
     /// Module registries, in resolution order.
     pub registries: Vec<String>,
-    /// Where managed git repos + worktrees live.
+    /// Where managed git repos + worktrees live (the repos volume).
     pub repos_root: PathBuf,
+    /// The meta repo on the repos volume; its `repos/` holds the org
+    /// checkouts and its `worktrees/` holds managed worktrees.
+    pub meta_repo: PathBuf,
+    /// Default org/group to mirror.
+    pub org: String,
+    /// Default forge: "github" | "gitlab".
+    pub forge: String,
     /// Pinned bazel version (drives `USE_BAZEL_VERSION` / `.bazelversion`).
     pub bazel_version: String,
     /// Disk-cache GC threshold in gibibytes (0 disables GC).
@@ -38,6 +45,9 @@ impl Default for Config {
                 "https://bcr.bazel.build/".to_string(),
             ],
             repos_root: PathBuf::from("/Volumes/Workspace"),
+            meta_repo: PathBuf::from("/Volumes/Workspace/fastverk"),
+            org: "fastverk".to_string(),
+            forge: "github".to_string(),
             bazel_version: "9.1.0".to_string(),
             disk_cache_max_gib: 50,
         }
@@ -48,6 +58,27 @@ impl Config {
     /// `<config_dir>/config.toml`.
     pub fn path() -> Result<PathBuf> {
         Ok(paths::config_dir()?.join("config.toml"))
+    }
+
+    /// Where the org checkouts live: `<meta_repo>/repos`.
+    #[must_use]
+    pub fn repos_dir(&self) -> PathBuf {
+        self.meta_repo.join("repos")
+    }
+
+    /// Where managed worktrees live: `<meta_repo>/worktrees`.
+    #[must_use]
+    pub fn worktrees_dir(&self) -> PathBuf {
+        self.meta_repo.join("worktrees")
+    }
+
+    /// The org repo name that is the meta repo itself (never a sub-checkout).
+    #[must_use]
+    pub fn meta_repo_name(&self) -> String {
+        self.meta_repo
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
     }
 
     /// Load the persisted config, or defaults when none exists yet.
