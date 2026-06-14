@@ -88,8 +88,24 @@ pub fn resolve(req_uri: &str) -> Result<Option<ResolvedCred>> {
 
 // ─── Provider presets + connect ────────────────────────────────────
 
+/// Built-in (public) OAuth App client ids shipped with the app, so users
+/// can connect with one click — no per-machine configuration. Device-code
+/// client ids carry NO secret, so bundling them is safe. An explicit
+/// `--client-id` or `config.client_ids[provider]` overrides these.
+///
+/// Empty until the org's OAuth Apps (with Device Flow enabled) are
+/// registered; fill in the Client ID values then.
+const GITHUB_CLIENT_ID: &str = "";
+const GITLAB_CLIENT_ID: &str = "";
+
+/// `given` if non-empty, else the bundled `default`.
+fn pick(given: &str, default: &str) -> String {
+    if given.is_empty() { default } else { given }.to_string()
+}
+
 /// Build a connection from a provider preset, leaving the secret to be
-/// filled by [`connect`]. `client_id` is required for OAuth providers.
+/// filled by [`connect`]. For OAuth providers, falls back to the built-in
+/// [`GITHUB_CLIENT_ID`]/[`GITLAB_CLIENT_ID`] when `client_id` is empty.
 pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
     let mut c = Connection::default();
     match provider {
@@ -107,7 +123,7 @@ pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
             c.value_prefix = "Bearer ".to_string();
             c.auth_kind = AuthKind::Oauth as i32;
             c.oauth = Some(OAuthConfig {
-                client_id: client_id.to_string(),
+                client_id: pick(client_id, GITHUB_CLIENT_ID),
                 auth_url: "https://github.com/login/oauth/authorize".to_string(),
                 token_url: "https://github.com/login/oauth/access_token".to_string(),
                 device_auth_url: "https://github.com/login/device/code".to_string(),
@@ -126,7 +142,7 @@ pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
             c.value_prefix = "Bearer ".to_string();
             c.auth_kind = AuthKind::Oauth as i32;
             c.oauth = Some(OAuthConfig {
-                client_id: client_id.to_string(),
+                client_id: pick(client_id, GITLAB_CLIENT_ID),
                 auth_url: "https://gitlab.com/oauth/authorize".to_string(),
                 token_url: "https://gitlab.com/oauth/token".to_string(),
                 device_auth_url: "https://gitlab.com/oauth/authorize_device".to_string(),
