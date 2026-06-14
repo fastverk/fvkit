@@ -26,6 +26,8 @@ directories.workspace = true
 toml.workspace = true
 keyring.workspace = true
 reqwest.workspace = true
+tower.workspace = true
+hyper-util.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
