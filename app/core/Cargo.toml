@@ -24,6 +24,8 @@ serde_json.workspace = true
 chrono.workspace = true
 directories.workspace = true
 toml.workspace = true
+keyring.workspace = true
+reqwest.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true

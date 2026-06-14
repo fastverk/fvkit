@@ -67,25 +67,45 @@ impl Fvd for FvdService {
 
     async fn connect_provider(
         &self,
-        _request: Request<ConnectProviderRequest>,
+        request: Request<ConnectProviderRequest>,
     ) -> Result<Response<ConnectProviderResponse>, Status> {
-        Err(Status::unimplemented(
-            "TODO(P1): OAuth flow + keychain store + registry write",
-        ))
+        let req = request.into_inner();
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        // client_id: explicit oauth override wins, else the configured one.
+        let client_id = req
+            .oauth
+            .map(|o| o.client_id)
+            .filter(|s| !s.is_empty())
+            .or_else(|| cfg.client_ids.get(&req.provider).cloned())
+            .unwrap_or_default();
+        let params = fvkit::connections::ConnectParams {
+            provider: req.provider,
+            client_id,
+            api_key: req.api_key,
+        };
+        // The device flow blocks on the user authorizing; keep it off the
+        // async reactor. (Streaming the user-code to the client is a P3
+        // follow-up; for now fvd logs it.)
+        let conn = tokio::task::spawn_blocking(move || {
+            fvkit::connections::connect(&params, |code, uri| {
+                tracing::info!(user_code = %code, verification_uri = %uri, "authorize device");
+            })
+        })
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+        Ok(Response::new(ConnectProviderResponse {
+            connection: Some(conn),
+            message: String::new(),
+        }))
     }
 
     async fn disconnect(
         &self,
         request: Request<DisconnectRequest>,
     ) -> Result<Response<DisconnectResponse>, Status> {
-        let id = request.into_inner().id;
-        let mut reg = fvkit::connections::load().map_err(internal)?;
-        let removed = fvkit::connections::remove(&mut reg, &id);
-        if removed {
-            fvkit::connections::save(&reg).map_err(internal)?;
-            // Keychain deletion is a no-op stub until P1.
-            let _ = fvkit::credstore::delete(&id, &id);
-        }
+        let removed =
+            fvkit::connections::disconnect(&request.into_inner().id).map_err(internal)?;
         Ok(Response::new(DisconnectResponse { removed }))
     }
 

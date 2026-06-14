@@ -4,6 +4,7 @@
 //! managed volumes. Secrets are NOT here — those live in the keychain,
 //! referenced from the connection registry (see [`crate::connections`]).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -33,6 +34,9 @@ pub struct Config {
     pub bazel_version: String,
     /// Disk-cache GC threshold in gibibytes (0 disables GC).
     pub disk_cache_max_gib: u64,
+    /// OAuth App client ids per provider ("github" -> "Iv1...."), used by
+    /// the device-code connect flow. Not secret.
+    pub client_ids: BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -50,6 +54,7 @@ impl Default for Config {
             forge: "github".to_string(),
             bazel_version: "9.1.0".to_string(),
             disk_cache_max_gib: 50,
+            client_ids: BTreeMap::new(),
         }
     }
 }

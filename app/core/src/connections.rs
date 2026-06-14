@@ -7,11 +7,11 @@
 //! (and `fvd`'s `GetCredentials`) use to turn a request URI into a
 //! header + value.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use prost::Message;
 
-use crate::proto::{Connection, ConnectionRegistry};
-use crate::{credstore, paths, uri};
+use crate::proto::{AuthKind, Connection, ConnectionRegistry, OAuthConfig};
+use crate::{credstore, oauth, paths, uri};
 
 /// Load the persisted registry, or an empty one when none exists.
 pub fn load() -> Result<ConnectionRegistry> {
@@ -86,9 +86,131 @@ pub fn resolve(req_uri: &str) -> Result<Option<ResolvedCred>> {
     }))
 }
 
+// ─── Provider presets + connect ────────────────────────────────────
+
+/// Build a connection from a provider preset, leaving the secret to be
+/// filled by [`connect`]. `client_id` is required for OAuth providers.
+pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
+    let mut c = Connection::default();
+    match provider {
+        "github" => {
+            c.id = "github".to_string();
+            c.display_name = "GitHub".to_string();
+            c.provider = "github".to_string();
+            c.host_patterns = vec![
+                "github.com".to_string(),
+                "*.github.com".to_string(),
+                "raw.githubusercontent.com".to_string(),
+                "codeload.github.com".to_string(),
+            ];
+            c.header = "Authorization".to_string();
+            c.value_prefix = "Bearer ".to_string();
+            c.auth_kind = AuthKind::Oauth as i32;
+            c.oauth = Some(OAuthConfig {
+                client_id: client_id.to_string(),
+                auth_url: "https://github.com/login/oauth/authorize".to_string(),
+                token_url: "https://github.com/login/oauth/access_token".to_string(),
+                device_auth_url: "https://github.com/login/device/code".to_string(),
+                scopes: vec!["repo".to_string(), "read:org".to_string()],
+                ..Default::default()
+            });
+            c.keychain_service = "fastverk.github".to_string();
+            c.keychain_account = "oauth".to_string();
+        }
+        "gitlab" => {
+            c.id = "gitlab".to_string();
+            c.display_name = "GitLab".to_string();
+            c.provider = "gitlab".to_string();
+            c.host_patterns = vec!["gitlab.com".to_string(), "*.gitlab.com".to_string()];
+            c.header = "Authorization".to_string();
+            c.value_prefix = "Bearer ".to_string();
+            c.auth_kind = AuthKind::Oauth as i32;
+            c.oauth = Some(OAuthConfig {
+                client_id: client_id.to_string(),
+                auth_url: "https://gitlab.com/oauth/authorize".to_string(),
+                token_url: "https://gitlab.com/oauth/token".to_string(),
+                device_auth_url: "https://gitlab.com/oauth/authorize_device".to_string(),
+                scopes: vec!["api".to_string(), "read_repository".to_string()],
+                ..Default::default()
+            });
+            c.keychain_service = "fastverk.gitlab".to_string();
+            c.keychain_account = "oauth".to_string();
+        }
+        "buildbuddy" => {
+            // BuildBuddy authenticates with a static API key (no OAuth).
+            c.id = "buildbuddy".to_string();
+            c.display_name = "BuildBuddy".to_string();
+            c.provider = "buildbuddy".to_string();
+            c.host_patterns = vec!["remote.buildbuddy.io".to_string()];
+            c.header = "x-buildbuddy-api-key".to_string();
+            c.auth_kind = AuthKind::ApiKey as i32;
+            c.keychain_service = "fastverk.buildbuddy".to_string();
+            c.keychain_account = "api-key".to_string();
+        }
+        other => bail!("unknown provider preset: {other} (use github|gitlab|buildbuddy)"),
+    }
+    Ok(c)
+}
+
+/// Inputs for [`connect`].
+pub struct ConnectParams {
+    pub provider: String,
+    /// OAuth App client id (required for OAuth providers).
+    pub client_id: String,
+    /// API key (required for AUTH_KIND_API_KEY providers, e.g. BuildBuddy).
+    pub api_key: String,
+}
+
+/// Establish a connection: run the provider's auth (OAuth device flow or
+/// API key), store the secret in the keychain, and upsert the registry.
+/// `prompt(user_code, verification_uri)` is shown during OAuth. Returns
+/// the persisted connection (which never carries the secret).
+pub fn connect(params: &ConnectParams, prompt: impl FnOnce(&str, &str)) -> Result<Connection> {
+    let mut conn = preset(&params.provider, &params.client_id)?;
+    let secret = match conn.auth_kind() {
+        AuthKind::Oauth => {
+            let oauth_cfg = conn
+                .oauth
+                .as_ref()
+                .context("OAuth preset is missing its config")?;
+            oauth::device_flow(oauth_cfg, prompt)?.secret
+        }
+        AuthKind::ApiKey => {
+            if params.api_key.is_empty() {
+                bail!("provider {} needs an API key", params.provider);
+            }
+            params.api_key.clone()
+        }
+        AuthKind::Unspecified => bail!("connection has no auth kind"),
+    };
+
+    conn.connected_at = chrono::Utc::now().to_rfc3339();
+    credstore::set(&conn.keychain_service, &conn.keychain_account, &secret)?;
+
+    let mut reg = load()?;
+    reg.connections.retain(|c| c.id != conn.id);
+    reg.connections.push(conn.clone());
+    save(&reg)?;
+    Ok(conn)
+}
+
+/// Remove a connection and delete its keychain secret.
+pub fn disconnect(id: &str) -> Result<bool> {
+    let mut reg = load()?;
+    if let Some(c) = reg.connections.iter().find(|c| c.id == id) {
+        let _ = credstore::delete(&c.keychain_service, &c.keychain_account);
+    }
+    let removed = remove(&mut reg, id);
+    if removed {
+        save(&reg)?;
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::host_matches;
+    use super::{host_matches, preset};
+    use crate::proto::AuthKind;
 
     #[test]
     fn wildcard_and_exact() {
@@ -97,5 +219,20 @@ mod tests {
         assert!(host_matches("*.github.com", "api.github.com"));
         assert!(host_matches("*.github.com", "github.com"));
         assert!(!host_matches("*.github.com", "notgithub.com"));
+    }
+
+    #[test]
+    fn presets_have_expected_shape() {
+        let gh = preset("github", "cid123").unwrap();
+        assert_eq!(gh.auth_kind(), AuthKind::Oauth);
+        assert_eq!(gh.header, "Authorization");
+        assert_eq!(gh.oauth.as_ref().unwrap().client_id, "cid123");
+        assert!(gh.host_patterns.iter().any(|h| h == "github.com"));
+
+        let bb = preset("buildbuddy", "").unwrap();
+        assert_eq!(bb.auth_kind(), AuthKind::ApiKey);
+        assert_eq!(bb.header, "x-buildbuddy-api-key");
+
+        assert!(preset("nope", "").is_err());
     }
 }
