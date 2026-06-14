@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 
+mod sched;
 mod server;
 
 #[tokio::main]
@@ -18,6 +19,9 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| "fvd=info,fvkit=info".into()),
         )
         .init();
+
+    // Background maintenance + update checks alongside the gRPC server.
+    tokio::spawn(sched::run());
 
     server::serve().await
 }

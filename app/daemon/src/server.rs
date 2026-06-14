@@ -285,9 +285,19 @@ impl Fvd for FvdService {
         &self,
         _request: Request<ApplyUpdateRequest>,
     ) -> Result<Response<ApplyUpdateResponse>, Status> {
-        Err(Status::unimplemented(
-            "TODO(P4): download + verify + swap the app bundle",
-        ))
+        match tokio::task::spawn_blocking(fvkit::update::apply)
+            .await
+            .map_err(internal)?
+        {
+            Ok(()) => Ok(Response::new(ApplyUpdateResponse {
+                started: true,
+                message: "downloading the latest release".to_string(),
+            })),
+            Err(e) => Ok(Response::new(ApplyUpdateResponse {
+                started: false,
+                message: e.to_string(),
+            })),
+        }
     }
 }
 

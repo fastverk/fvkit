@@ -33,6 +33,7 @@ pub mod oauth;
 pub mod paths;
 pub mod platform;
 pub mod repos;
+pub mod service;
 pub mod tools;
 pub mod update;
 pub mod uri;

@@ -84,7 +84,7 @@ fn spawn_fvd() -> Result<()> {
 
 /// Find the `fvd` binary: next to the current executable (the app bundle /
 /// cargo target dir), else on `PATH`.
-fn find_fvd() -> Option<PathBuf> {
+pub fn find_fvd() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(sibling) = exe.parent().map(|d| d.join("fvd")) {
             if sibling.is_file() {
