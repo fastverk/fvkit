@@ -9,7 +9,10 @@
 
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
+
 use crate::config::Config;
+use crate::paths;
 
 pub const BEGIN: &str = "# >>> fastverk managed >>>";
 pub const END: &str = "# <<< fastverk managed <<<";
@@ -74,9 +77,59 @@ pub fn splice(existing: &str, block: &str) -> String {
     }
 }
 
+/// The fastverk-managed region of `s`, markers included, if present.
+fn extract_region(s: &str) -> Option<&str> {
+    let b = s.find(BEGIN)?;
+    let e = s.find(END)? + END.len();
+    Some(&s[b..e])
+}
+
+/// A simple `-old / +new` diff of just the managed region (we replace the
+/// whole region, so a region-level diff is the honest representation).
+#[must_use]
+pub fn region_diff(existing: &str, new_block: &str) -> String {
+    let mut d = String::new();
+    if let Some(old) = extract_region(existing) {
+        for l in old.lines() {
+            d.push_str("- ");
+            d.push_str(l);
+            d.push('\n');
+        }
+    }
+    for l in new_block.trim_end_matches('\n').lines() {
+        d.push_str("+ ");
+        d.push_str(l);
+        d.push('\n');
+    }
+    d
+}
+
+/// Splice the managed region into `~/.bazelrc`, preserving everything
+/// outside it. Returns `(changed, region-diff)`. When `validate_only`,
+/// computes without writing.
+pub fn apply(cfg: &Config, cred_helper: &Path, validate_only: bool) -> Result<(bool, String)> {
+    let path = paths::user_bazelrc()?;
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let block = managed_block(cfg, cred_helper);
+    let updated = splice(&existing, &block);
+    let changed = updated != existing;
+    let diff = if changed {
+        region_diff(&existing, &block)
+    } else {
+        String::new()
+    };
+    if changed && !validate_only {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(&path, &updated).with_context(|| format!("write {}", path.display()))?;
+    }
+    Ok((changed, diff))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{managed_block, splice, BEGIN, END};
+    use super::{managed_block, region_diff, splice, BEGIN, END};
     use crate::config::Config;
     use std::path::Path;
 
@@ -95,5 +148,18 @@ mod tests {
         let twice = splice(&once, &block);
         assert_eq!(once, twice);
         assert!(once.starts_with("# user line"));
+    }
+
+    #[test]
+    fn region_diff_replaces_whole_region() {
+        let block = managed_block(&Config::default(), Path::new("/x/ch"));
+        // No prior region: only additions.
+        let d = region_diff("# user\n", &block);
+        assert!(d.lines().all(|l| l.starts_with("+ ")));
+        // Prior region present: both removals and additions.
+        let with = splice("# user\n", &managed_block(&Config::default(), Path::new("/old")));
+        let d2 = region_diff(&with, &block);
+        assert!(d2.contains("- # >>> fastverk managed >>>"));
+        assert!(d2.contains("+ # >>> fastverk managed >>>"));
     }
 }

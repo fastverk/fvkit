@@ -122,11 +122,14 @@ impl Fvd for FvdService {
 
     async fn bazelrc_apply(
         &self,
-        _request: Request<BazelrcApplyRequest>,
+        request: Request<BazelrcApplyRequest>,
     ) -> Result<Response<BazelrcApplyResponse>, Status> {
-        Err(Status::unimplemented(
-            "TODO(P1): splice managed region into ~/.bazelrc",
-        ))
+        let validate_only = request.into_inner().validate_only;
+        let cfg = fvkit::config::Config::load().map_err(internal)?;
+        let ch = fvkit::bazelrc::cred_helper_path();
+        let (changed, diff) =
+            fvkit::bazelrc::apply(&cfg, &ch, validate_only).map_err(internal)?;
+        Ok(Response::new(BazelrcApplyResponse { changed, diff }))
     }
 
     async fn repos_sync(
