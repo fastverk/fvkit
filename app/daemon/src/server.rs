@@ -119,11 +119,16 @@ impl Fvd for FvdService {
 
     async fn volume_create(
         &self,
-        _request: Request<VolumeCreateRequest>,
+        request: Request<VolumeCreateRequest>,
     ) -> Result<Response<VolumeCreateResponse>, Status> {
-        Err(Status::unimplemented(
-            "TODO(P1): APFS addVolume behind on-demand elevation",
-        ))
+        let id = request.into_inner().id;
+        // Elevation prompt + diskutil are blocking; keep them off the reactor.
+        let (volumes, message) =
+            tokio::task::spawn_blocking(move || fvkit::volume::create(&id, false))
+                .await
+                .map_err(internal)?
+                .map_err(internal)?;
+        Ok(Response::new(VolumeCreateResponse { volumes, message }))
     }
 
     async fn bazelrc_preview(
