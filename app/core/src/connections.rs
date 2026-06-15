@@ -93,10 +93,11 @@ pub fn resolve(req_uri: &str) -> Result<Option<ResolvedCred>> {
 /// client ids carry NO secret, so bundling them is safe. An explicit
 /// `--client-id` or `config.client_ids[provider]` overrides these.
 ///
-/// Empty until the org's OAuth Apps (with Device Flow enabled) are
-/// registered; fill in the Client ID values then.
-const GITHUB_CLIENT_ID: &str = "";
-const GITLAB_CLIENT_ID: &str = "";
+/// These are the fastverk org's OAuth Apps (Device Flow enabled). Public
+/// client ids — no secret — so shipping them is safe.
+const GITHUB_CLIENT_ID: &str = "Ov23lioy3u3aCHYDK8IJ";
+const GITLAB_CLIENT_ID: &str =
+    "ef3e11b3ac17b8df79facfcf4bcc94152b2343c1f221e1f3884ca1b62330eb35";
 
 /// `given` if non-empty, else the bundled `default`.
 fn pick(given: &str, default: &str) -> String {
