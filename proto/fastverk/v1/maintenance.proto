@@ -41,6 +41,43 @@ message VolumeState {
   string device = 6;
 }
 
+// What fastverk would do with a managed location, computed by a
+// read-only audit before any change. fastverk never reformats, mounts
+// over, or deletes existing data: it only creates genuinely-absent
+// volumes and adopts/augments existing ones in place.
+enum VolumeDisposition {
+  // Unset.
+  VOLUME_DISPOSITION_UNSPECIFIED = 0;
+  // Nothing at the mount point — safe to create a new dedicated volume.
+  VOLUME_DISPOSITION_CREATE = 1;
+  // Already a dedicated volume here — adopted as-is and left untouched.
+  VOLUME_DISPOSITION_ADOPT = 2;
+  // A plain folder on a shared volume holds the data — used in place and
+  // augmented (never mounted over / overwritten); may later be moved onto
+  // a dedicated volume.
+  VOLUME_DISPOSITION_MIGRATE = 3;
+  // Unexpected state needing manual review; fastverk will not touch it.
+  VOLUME_DISPOSITION_CONFLICT = 4;
+}
+
+// The result of auditing one managed location before any change. This is
+// the safety contract: an install inspects what already exists and only
+// ever creates-when-absent or adopts/augments-in-place.
+message VolumeAudit {
+  // Observed state of the location.
+  VolumeState state = 1;
+  // What fastverk would do (non-destructively).
+  VolumeDisposition disposition = 2;
+  // Filesystem type at the mount point when it is its own volume, e.g.
+  // "apfs"; empty when not a dedicated mount.
+  string fs_type = 3;
+  // Whether the location is its own mount point (a dedicated volume) vs a
+  // folder living on a shared/parent volume.
+  bool dedicated_volume = 4;
+  // Human-facing explanation of the disposition.
+  string detail = 5;
+}
+
 // Outcome of a single maintenance task.
 message MaintenanceTask {
   // Task name: "disk-cache-gc" | "bazel-clean" | "git-gc" |

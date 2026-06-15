@@ -18,9 +18,10 @@ use fvkit::proto::{
     ConnectProviderRequest, ConnectProviderResponse, DisconnectRequest, DisconnectResponse,
     GetCredentialsRequest, GetCredentialsResponse, GetStatusRequest, ListConnectionsRequest,
     ListConnectionsResponse, MaintainNowRequest, MaintenanceReport, RepoSyncReport,
-    ReposStatusRequest, ReposStatusResponse, ReposSyncRequest, StatusResponse, VolumeCreateRequest,
-    VolumeCreateResponse, VolumeStatusRequest, VolumeStatusResponse, Worktree, WorktreeAddRequest,
-    WorktreeListRequest, WorktreeListResponse, WorktreeRemoveRequest, WorktreeRemoveResponse,
+    ReposStatusRequest, ReposStatusResponse, ReposSyncRequest, StatusResponse, VolumeAuditRequest,
+    VolumeAuditResponse, VolumeCreateRequest, VolumeCreateResponse, VolumeStatusRequest,
+    VolumeStatusResponse, Worktree, WorktreeAddRequest, WorktreeListRequest, WorktreeListResponse,
+    WorktreeRemoveRequest, WorktreeRemoveResponse,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -116,6 +117,14 @@ impl Fvd for FvdService {
     ) -> Result<Response<VolumeStatusResponse>, Status> {
         let volumes = fvkit::volume::status().map_err(internal)?;
         Ok(Response::new(VolumeStatusResponse { volumes }))
+    }
+
+    async fn volume_audit(
+        &self,
+        _request: Request<VolumeAuditRequest>,
+    ) -> Result<Response<VolumeAuditResponse>, Status> {
+        let audits = fvkit::volume::audit().map_err(internal)?;
+        Ok(Response::new(VolumeAuditResponse { audits }))
     }
 
     async fn volume_create(

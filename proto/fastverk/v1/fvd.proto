@@ -40,8 +40,15 @@ service Fvd {
   // Report the state of every managed volume.
   rpc VolumeStatus(VolumeStatusRequest) returns (VolumeStatusResponse);
 
-  // Create + mount a managed volume. Triggers an on-demand admin
-  // elevation prompt (macOS: osascript) inside the daemon.
+  // Audit the managed locations without changing anything: report, per
+  // location, whether fastverk would create / adopt / migrate. This is
+  // the pre-install safety check that guarantees existing volumes are
+  // never clobbered — only created-when-absent or augmented in place.
+  rpc VolumeAudit(VolumeAuditRequest) returns (VolumeAuditResponse);
+
+  // Provision managed volume(s): create only genuinely-absent ones (admin
+  // elevation prompt via osascript), adopt/augment existing ones in place.
+  // Never mounts over or reformats a location that already holds data.
   rpc VolumeCreate(VolumeCreateRequest) returns (VolumeCreateResponse);
 
   // Render the fastverk-managed region of ~/.bazelrc without writing it.
@@ -155,6 +162,14 @@ message VolumeStatusRequest {}
 message VolumeStatusResponse {
   // Per-volume observed state.
   repeated VolumeState volumes = 1;
+}
+
+// Request to audit the managed locations (read-only).
+message VolumeAuditRequest {}
+// The per-location audit: what fastverk would do without clobbering.
+message VolumeAuditResponse {
+  // One audit entry per managed location.
+  repeated VolumeAudit audits = 1;
 }
 
 // Request to create a managed volume.
