@@ -33,6 +33,7 @@ hyper-util.workspace = true
 # the env-fallback path, so fvkit still builds everywhere (e.g. Linux CI).
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring.workspace = true
+mac-notification-sys.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
