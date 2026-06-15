@@ -291,7 +291,15 @@ fn canonical_env_var(id: &str) -> String {
 /// Ecosystem/compat env var aliases for a (provider, host), tried after the
 /// canonical var (first non-empty wins).
 fn env_aliases(provider: &str, host: &str) -> Vec<String> {
-    let mut v: Vec<String> = match provider {
+    // Self-hosted savvi GitLab: the org's CI vars, in the precedence studio
+    // CI expects (AION_NPM_TOKEN highest), ahead of the generic name.
+    if host == "gitlab.savvifi.com" {
+        return ["AION_NPM_TOKEN", "GITLAB_SAVVIFI_TOKEN", "GITLAB_TOKEN"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+    }
+    match provider {
         "github" => vec!["GITHUB_TOKEN", "GH_TOKEN"],
         "gitlab" => vec!["GITLAB_TOKEN"],
         "buildbuddy" => vec!["BUILDBUDDY_API_KEY"],
@@ -299,13 +307,7 @@ fn env_aliases(provider: &str, host: &str) -> Vec<String> {
     }
     .into_iter()
     .map(String::from)
-    .collect();
-    // Self-hosted savvi GitLab: the CI vars the org already exports.
-    if host == "gitlab.savvifi.com" {
-        v.push("GITLAB_SAVVIFI_TOKEN".to_string());
-        v.push("AION_NPM_TOKEN".to_string());
-    }
-    v
+    .collect()
 }
 
 /// Inputs for [`connect`].
