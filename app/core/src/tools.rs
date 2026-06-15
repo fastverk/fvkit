@@ -16,9 +16,64 @@ use anyhow::{Context, Result};
 
 use crate::bazelrc;
 
-/// Ensure bazelisk is installed and the pinned bazel version is selected.
-pub fn ensure_installed(_version: &str) -> Result<()> {
-    anyhow::bail!("TODO(P1): install/symlink bundled bazelisk + pin bazel version")
+/// bazelisk release the app provisions (it then fetches the per-workspace
+/// pinned bazel from `.bazelversion` / `USE_BAZEL_VERSION` on demand).
+const BAZELISK_VERSION: &str = "v1.25.0";
+
+/// Provide the bazelisk + bazel binaries: download bazelisk into
+/// `~/.local/bin` and symlink `bazel` -> it (so `bazel <cmd>` runs through
+/// bazelisk). Idempotent — skips the download if bazelisk is already there.
+/// Returns the bazelisk path.
+pub fn ensure_installed(_pinned_bazel_version: &str) -> Result<PathBuf> {
+    let bin_dir = directories::BaseDirs::new()
+        .context("no home directory")?
+        .home_dir()
+        .join(".local/bin");
+    std::fs::create_dir_all(&bin_dir).with_context(|| format!("create {}", bin_dir.display()))?;
+    let bazelisk = bin_dir.join("bazelisk");
+
+    if !bazelisk.exists() {
+        let arch = match std::env::consts::ARCH {
+            "aarch64" => "arm64",
+            "x86_64" => "amd64",
+            other => anyhow::bail!("unsupported arch for bazelisk: {other}"),
+        };
+        let os = match std::env::consts::OS {
+            "macos" => "darwin",
+            "linux" => "linux",
+            other => anyhow::bail!("unsupported os for bazelisk: {other}"),
+        };
+        let url = format!(
+            "https://github.com/bazelbuild/bazelisk/releases/download/{BAZELISK_VERSION}/bazelisk-{os}-{arch}"
+        );
+        let bytes = reqwest::blocking::Client::builder()
+            .user_agent("fastverk")
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?
+            .get(&url)
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .with_context(|| format!("download bazelisk from {url}"))?
+            .bytes()
+            .context("read bazelisk")?;
+        std::fs::write(&bazelisk, &bytes)
+            .with_context(|| format!("write {}", bazelisk.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bazelisk, std::fs::Permissions::from_mode(0o755))?;
+        }
+    }
+
+    // `bazel` -> bazelisk, so the user's `bazel` is bazelisk.
+    #[cfg(unix)]
+    {
+        let bazel = bin_dir.join("bazel");
+        let _ = std::fs::remove_file(&bazel);
+        std::os::unix::fs::symlink(&bazelisk, &bazel)
+            .with_context(|| format!("symlink {}", bazel.display()))?;
+    }
+    Ok(bazelisk)
 }
 
 /// Whether bazelisk is currently resolvable on PATH.
