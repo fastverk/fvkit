@@ -86,6 +86,10 @@ fn spawn_fvd() -> Result<()> {
 /// cargo target dir), else on `PATH`.
 pub fn find_fvd() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
+        // Resolve symlinks: `fv` is typically reached via a ~/.local/bin/fv
+        // symlink into the .app bundle, and current_exe() returns the symlink
+        // path — canonicalize so the sibling lookup lands in the bundle.
+        let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
         if let Some(sibling) = exe.parent().map(|d| d.join("fvd")) {
             if sibling.is_file() {
                 return Some(sibling);

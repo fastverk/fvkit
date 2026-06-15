@@ -35,23 +35,36 @@ pub fn check() -> Result<UpdateInfo> {
         .timeout(Duration::from_secs(15))
         .build()
         .context("build http client")?;
-    let resp = client
+    // Use /releases (not /releases/latest): the latter 404s while the repo
+    // is private or has only prereleases. Authenticate with the stored
+    // github token when available (the repo is private) — falling back to
+    // anonymous, which simply yields "no update" rather than an error.
+    let mut req = client
         .get(format!(
-            "https://api.github.com/repos/{RELEASE_REPO}/releases/latest"
+            "https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=10"
         ))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .context("query releases")?;
+        .header("Accept", "application/vnd.github+json");
+    if let Ok(Some(cred)) = crate::connections::resolve("https://api.github.com/") {
+        req = req.header(cred.header, cred.value);
+    }
+    let resp = req.send().context("query releases")?;
 
-    // No releases published yet → nothing to update to.
-    if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok(UpdateInfo {
-            available: false,
-            latest: current.clone(),
-            current,
-            url: String::new(),
-            notes: String::new(),
-        });
+    // Private/unauthorized/none → treat as "no update", not an error, so a
+    // status snapshot never fails on the update check.
+    let no_update = || UpdateInfo {
+        available: false,
+        latest: current.clone(),
+        current: current.clone(),
+        url: String::new(),
+        notes: String::new(),
+    };
+    if matches!(
+        resp.status(),
+        reqwest::StatusCode::NOT_FOUND
+            | reqwest::StatusCode::UNAUTHORIZED
+            | reqwest::StatusCode::FORBIDDEN
+    ) {
+        return Ok(no_update());
     }
     let json: serde_json::Value = resp
         .error_for_status()
@@ -59,12 +72,20 @@ pub fn check() -> Result<UpdateInfo> {
         .json()
         .context("parse releases JSON")?;
 
-    let latest = json["tag_name"]
+    // Newest non-draft release (the array is newest-first).
+    let Some(rel) = json
+        .as_array()
+        .and_then(|rels| rels.iter().find(|r| !r["draft"].as_bool().unwrap_or(false)))
+    else {
+        return Ok(no_update());
+    };
+
+    let latest = rel["tag_name"]
         .as_str()
         .unwrap_or("")
         .trim_start_matches('v')
         .to_string();
-    let url = json["assets"]
+    let url = rel["assets"]
         .as_array()
         .and_then(|assets| {
             assets.iter().find_map(|a| {
@@ -74,7 +95,7 @@ pub fn check() -> Result<UpdateInfo> {
             })
         })
         .unwrap_or_default();
-    let notes = json["body"].as_str().unwrap_or("").to_string();
+    let notes = rel["body"].as_str().unwrap_or("").to_string();
 
     Ok(UpdateInfo {
         available: is_newer(&latest, &current),

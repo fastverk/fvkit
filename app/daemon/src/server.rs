@@ -271,14 +271,20 @@ impl Fvd for FvdService {
     ) -> Result<Response<StatusResponse>, Status> {
         let volumes = fvkit::volume::status().unwrap_or_default();
         let reg = fvkit::connections::load().unwrap_or_default();
-        let update = fvkit::update::check().map_err(internal)?;
+        // update::check() uses a blocking reqwest client (which builds/drops
+        // its own runtime) — must run off the async reactor or it panics.
+        // A failed/blocked check must not fail the whole status snapshot.
+        let update = tokio::task::spawn_blocking(fvkit::update::check)
+            .await
+            .ok()
+            .and_then(Result::ok);
         Ok(Response::new(StatusResponse {
             version: VERSION.to_string(),
             volumes,
             connection_count: i32::try_from(reg.connections.len()).unwrap_or(i32::MAX),
             last_maintenance: None,
-            update_available: update.available,
-            latest_version: update.latest,
+            update_available: update.as_ref().is_some_and(|u| u.available),
+            latest_version: update.map(|u| u.latest).unwrap_or_default(),
         }))
     }
 
@@ -286,7 +292,10 @@ impl Fvd for FvdService {
         &self,
         _request: Request<CheckUpdateRequest>,
     ) -> Result<Response<CheckUpdateResponse>, Status> {
-        let info = fvkit::update::check().map_err(internal)?;
+        let info = tokio::task::spawn_blocking(fvkit::update::check)
+            .await
+            .map_err(internal)?
+            .map_err(internal)?;
         Ok(Response::new(CheckUpdateResponse {
             update_available: info.available,
             current_version: info.current,
