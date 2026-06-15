@@ -99,6 +99,10 @@ const GITHUB_CLIENT_ID: &str = "Ov23lioy3u3aCHYDK8IJ";
 const GITLAB_CLIENT_ID: &str =
     "ef3e11b3ac17b8df79facfcf4bcc94152b2343c1f221e1f3884ca1b62330eb35";
 
+/// The org's self-hosted GitLab instance (not gitlab.com). Drives the
+/// GitLab preset's host patterns + OAuth endpoints.
+const GITLAB_HOST: &str = "gitlab.savvifi.com";
+
 /// `given` if non-empty, else the bundled `default`.
 fn pick(given: &str, default: &str) -> String {
     if given.is_empty() { default } else { given }.to_string()
@@ -136,17 +140,17 @@ pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
         }
         "gitlab" => {
             c.id = "gitlab".to_string();
-            c.display_name = "GitLab".to_string();
+            c.display_name = format!("GitLab ({GITLAB_HOST})");
             c.provider = "gitlab".to_string();
-            c.host_patterns = vec!["gitlab.com".to_string(), "*.gitlab.com".to_string()];
+            c.host_patterns = vec![GITLAB_HOST.to_string(), format!("*.{GITLAB_HOST}")];
             c.header = "Authorization".to_string();
             c.value_prefix = "Bearer ".to_string();
             c.auth_kind = AuthKind::Oauth as i32;
             c.oauth = Some(OAuthConfig {
                 client_id: pick(client_id, GITLAB_CLIENT_ID),
-                auth_url: "https://gitlab.com/oauth/authorize".to_string(),
-                token_url: "https://gitlab.com/oauth/token".to_string(),
-                device_auth_url: "https://gitlab.com/oauth/authorize_device".to_string(),
+                auth_url: format!("https://{GITLAB_HOST}/oauth/authorize"),
+                token_url: format!("https://{GITLAB_HOST}/oauth/token"),
+                device_auth_url: format!("https://{GITLAB_HOST}/oauth/authorize_device"),
                 scopes: vec!["api".to_string(), "read_repository".to_string()],
                 ..Default::default()
             });
