@@ -29,6 +29,7 @@ pub mod connections;
 pub mod credstore;
 pub mod ipc;
 pub mod maintain;
+pub mod notify;
 pub mod oauth;
 pub mod paths;
 pub mod platform;
@@ -38,3 +39,16 @@ pub mod tools;
 pub mod update;
 pub mod uri;
 pub mod volume;
+
+/// The app version. Prefers the stamped `FASTVERK_VERSION` (the git tag,
+/// injected by the Bazel workspace-status stamp — see
+/// `tools/workspace_status.sh`), falling back to the crate version for
+/// non-stamped / `cargo` builds. A non-stamp Bazel build leaves the literal
+/// `{STABLE_FASTVERK_VERSION}`, which the `'{'` check rejects.
+#[must_use]
+pub fn version() -> &'static str {
+    match option_env!("FASTVERK_VERSION") {
+        Some(v) if !v.is_empty() && !v.contains('{') => v,
+        _ => env!("CARGO_PKG_VERSION"),
+    }
+}

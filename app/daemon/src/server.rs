@@ -24,7 +24,9 @@ use fvkit::proto::{
     WorktreeRemoveRequest, WorktreeRemoveResponse,
 };
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+fn version() -> &'static str {
+    fvkit::version()
+}
 
 #[derive(Default)]
 pub struct FvdService;
@@ -279,7 +281,7 @@ impl Fvd for FvdService {
             .ok()
             .and_then(Result::ok);
         Ok(Response::new(StatusResponse {
-            version: VERSION.to_string(),
+            version: version().to_string(),
             volumes,
             connection_count: i32::try_from(reg.connections.len()).unwrap_or(i32::MAX),
             last_maintenance: None,
@@ -330,7 +332,7 @@ impl Fvd for FvdService {
 pub async fn serve() -> Result<()> {
     let sock = fvkit::paths::socket_path()?;
     let incoming = fvkit::ipc::bind(&sock)?;
-    tracing::info!(socket = %sock.display(), version = VERSION, "fvd listening");
+    tracing::info!(socket = %sock.display(), version = version(), "fvd listening");
 
     tonic::transport::Server::builder()
         .add_service(FvdServer::new(FvdService::default()))

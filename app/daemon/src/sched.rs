@@ -25,13 +25,16 @@ pub async fn run() {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     tick.tick().await; // consume the immediate first tick
 
+    // Remember the version we last notified about, so a standing update
+    // doesn't re-notify every cycle.
+    let mut notified_version: Option<String> = None;
     loop {
         tick.tick().await;
-        run_once().await;
+        run_once(&mut notified_version).await;
     }
 }
 
-async fn run_once() {
+async fn run_once(notified_version: &mut Option<String>) {
     // Keep the configured org/group repos in sync with the repos volume.
     if let Ok(cfg) = fvkit::config::Config::load() {
         let (repos_dir, meta, sources) = (cfg.repos_dir(), cfg.meta_repo_name(), cfg.sources);
@@ -69,6 +72,11 @@ async fn run_once() {
     if let Ok(Ok(info)) = tokio::task::spawn_blocking(fvkit::update::check).await {
         if info.available {
             tracing::info!(latest = %info.latest, "scheduler: update available");
+            // Notify once per new version (not every 6h cycle).
+            if notified_version.as_deref() != Some(info.latest.as_str()) {
+                fvkit::notify::send("fastverk", &format!("Update available: v{}", info.latest));
+                *notified_version = Some(info.latest);
+            }
         }
     }
 }

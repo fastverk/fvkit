@@ -29,7 +29,7 @@ pub struct UpdateInfo {
 }
 
 fn current_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    crate::version().to_string()
 }
 
 /// Attach a GitHub auth header for the release/asset API. Tries
@@ -172,6 +172,7 @@ pub fn apply(force: bool) -> Result<()> {
     {
         let _ = std::process::Command::new("open").arg(&dest).status();
     }
+    crate::notify::send("fastverk", &format!("Updated to v{}", info.latest));
     Ok(())
 }
 
