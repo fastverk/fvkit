@@ -310,7 +310,11 @@ message CheckUpdateResponse {
 }
 
 // Request to apply the latest update.
-message ApplyUpdateRequest {}
+message ApplyUpdateRequest {
+  // Re-install the latest release even when it isn't strictly newer (to
+  // ship a fix at the same or a lower version).
+  bool force = 1;
+}
 // Result of starting an update.
 message ApplyUpdateResponse {
   // Whether the update was initiated.

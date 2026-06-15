@@ -307,15 +307,16 @@ impl Fvd for FvdService {
 
     async fn apply_update(
         &self,
-        _request: Request<ApplyUpdateRequest>,
+        request: Request<ApplyUpdateRequest>,
     ) -> Result<Response<ApplyUpdateResponse>, Status> {
-        match tokio::task::spawn_blocking(fvkit::update::apply)
+        let force = request.into_inner().force;
+        match tokio::task::spawn_blocking(move || fvkit::update::apply(force))
             .await
             .map_err(internal)?
         {
             Ok(()) => Ok(Response::new(ApplyUpdateResponse {
                 started: true,
-                message: "downloading the latest release".to_string(),
+                message: "installed the latest release; relaunching".to_string(),
             })),
             Err(e) => Ok(Response::new(ApplyUpdateResponse {
                 started: false,
