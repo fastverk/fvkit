@@ -18,13 +18,16 @@ pub const BEGIN: &str = "# >>> fastverk managed >>>";
 pub const END: &str = "# <<< fastverk managed <<<";
 
 /// Path to the installed cred-helper binary. Overridable via
-/// `$FASTVERK_CRED_HELPER` (used in dev / tests). Default is the
-/// install location inside the app bundle's helper dir.
+/// `$FASTVERK_CRED_HELPER`. Defaults to a user-writable location
+/// (`~/.local/bin/fastverk-cred-helper`) so install needs no sudo.
 #[must_use]
 pub fn cred_helper_path() -> PathBuf {
-    std::env::var("FASTVERK_CRED_HELPER").map_or_else(
-        |_| PathBuf::from("/usr/local/bin/fastverk-cred-helper"),
-        PathBuf::from,
+    if let Ok(p) = std::env::var("FASTVERK_CRED_HELPER") {
+        return PathBuf::from(p);
+    }
+    directories::BaseDirs::new().map_or_else(
+        || PathBuf::from("/usr/local/bin/fastverk-cred-helper"),
+        |d| d.home_dir().join(".local/bin/fastverk-cred-helper"),
     )
 }
 

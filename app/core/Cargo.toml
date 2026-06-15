@@ -24,10 +24,15 @@ serde_json.workspace = true
 chrono.workspace = true
 directories.workspace = true
 toml.workspace = true
-keyring.workspace = true
 reqwest.workspace = true
 tower.workspace = true
 hyper-util.workspace = true
+
+# The OS keychain backend is macOS-only for now (Linux Secret Service /
+# Windows Credential Manager are P6); on other targets credstore stubs to
+# the env-fallback path, so fvkit still builds everywhere (e.g. Linux CI).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
