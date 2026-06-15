@@ -123,6 +123,11 @@ message ConnectProviderRequest {
   // For AUTH_KIND_API_KEY: the key value to store. Never persisted to
   // the registry — written straight to the keychain.
   string api_key = 9;
+  // Instance host for the provider preset, e.g. "github.com",
+  // "github.acme.com" (GitHub Enterprise), "gitlab.savvifi.com". Empty =
+  // the provider's default host. Lets the same provider be connected
+  // one-by-one across hosted / enterprise / self-hosted instances.
+  string host = 10;
 }
 // The established connection, plus any interactive instruction.
 message ConnectProviderResponse {

@@ -99,8 +99,8 @@ const GITHUB_CLIENT_ID: &str = "Ov23lioy3u3aCHYDK8IJ";
 const GITLAB_CLIENT_ID: &str =
     "ef3e11b3ac17b8df79facfcf4bcc94152b2343c1f221e1f3884ca1b62330eb35";
 
-/// The org's self-hosted GitLab instance (not gitlab.com). Drives the
-/// GitLab preset's host patterns + OAuth endpoints.
+/// The org's self-hosted GitLab instance — the default `gitlab` host (so
+/// `fv connect gitlab` is one-click for the org). Override with any host.
 const GITLAB_HOST: &str = "gitlab.savvifi.com";
 
 /// `given` if non-empty, else the bundled `default`.
@@ -108,75 +108,126 @@ fn pick(given: &str, default: &str) -> String {
     if given.is_empty() { default } else { given }.to_string()
 }
 
-/// Build a connection from a provider preset, leaving the secret to be
-/// filled by [`connect`]. For OAuth providers, falls back to the built-in
-/// [`GITHUB_CLIENT_ID`]/[`GITLAB_CLIENT_ID`] when `client_id` is empty.
-pub fn preset(provider: &str, client_id: &str) -> Result<Connection> {
+/// The default instance host for a provider when none is given.
+fn default_host(provider: &str) -> &'static str {
+    match provider {
+        "github" => "github.com",
+        "gitlab" => GITLAB_HOST,
+        "buildbuddy" => "remote.buildbuddy.io",
+        _ => "",
+    }
+}
+
+/// Bundled (public) OAuth client id for a specific (provider, host), or ""
+/// for instances we don't ship one for (the user supplies `--client-id`).
+fn default_client_id(provider: &str, host: &str) -> &'static str {
+    if provider == "github" && host == "github.com" {
+        GITHUB_CLIENT_ID
+    } else if provider == "gitlab" && host == GITLAB_HOST {
+        GITLAB_CLIENT_ID
+    } else {
+        ""
+    }
+}
+
+/// Stable connection id: the short provider name for its default host, the
+/// instance host otherwise (so multiple instances of one provider coexist
+/// — github.com vs github.acme.com vs gitlab.savvifi.com).
+fn connection_id(provider: &str, host: &str) -> String {
+    if host == default_host(provider) {
+        provider.to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+/// Build a connection from a provider preset for a given instance `host`
+/// (empty = the provider default). OAuth `client_id` falls back to the
+/// bundled id for known (provider, host) pairs. The same provider can be
+/// connected one-by-one across hosted / enterprise / self-hosted hosts.
+pub fn preset(provider: &str, host: &str, client_id: &str) -> Result<Connection> {
+    let host = if host.is_empty() {
+        default_host(provider)
+    } else {
+        host
+    };
+    let id = connection_id(provider, host);
     let mut c = Connection::default();
     match provider {
         "github" => {
-            c.id = "github".to_string();
-            c.display_name = "GitHub".to_string();
+            let canonical = host == "github.com";
+            c.display_name = if canonical {
+                "GitHub".to_string()
+            } else {
+                format!("GitHub ({host})")
+            };
             c.provider = "github".to_string();
-            c.host_patterns = vec![
-                "github.com".to_string(),
-                "*.github.com".to_string(),
-                "raw.githubusercontent.com".to_string(),
-                "codeload.github.com".to_string(),
-            ];
+            // github.com has dedicated raw/codeload hosts; GHE serves all
+            // from the instance host.
+            c.host_patterns = if canonical {
+                vec![
+                    "github.com".to_string(),
+                    "*.github.com".to_string(),
+                    "raw.githubusercontent.com".to_string(),
+                    "codeload.github.com".to_string(),
+                ]
+            } else {
+                vec![host.to_string(), format!("*.{host}")]
+            };
             c.header = "Authorization".to_string();
             c.value_prefix = "Bearer ".to_string();
             c.auth_kind = AuthKind::Oauth as i32;
             c.oauth = Some(OAuthConfig {
-                client_id: pick(client_id, GITHUB_CLIENT_ID),
-                auth_url: "https://github.com/login/oauth/authorize".to_string(),
-                token_url: "https://github.com/login/oauth/access_token".to_string(),
-                device_auth_url: "https://github.com/login/device/code".to_string(),
+                client_id: pick(client_id, default_client_id("github", host)),
+                auth_url: format!("https://{host}/login/oauth/authorize"),
+                token_url: format!("https://{host}/login/oauth/access_token"),
+                device_auth_url: format!("https://{host}/login/device/code"),
                 scopes: vec!["repo".to_string(), "read:org".to_string()],
                 ..Default::default()
             });
-            c.keychain_service = "fastverk.github".to_string();
-            c.keychain_account = "oauth".to_string();
         }
         "gitlab" => {
-            c.id = "gitlab".to_string();
-            c.display_name = format!("GitLab ({GITLAB_HOST})");
+            c.display_name = format!("GitLab ({host})");
             c.provider = "gitlab".to_string();
-            c.host_patterns = vec![GITLAB_HOST.to_string(), format!("*.{GITLAB_HOST}")];
+            c.host_patterns = vec![host.to_string(), format!("*.{host}")];
             c.header = "Authorization".to_string();
             c.value_prefix = "Bearer ".to_string();
             c.auth_kind = AuthKind::Oauth as i32;
             c.oauth = Some(OAuthConfig {
-                client_id: pick(client_id, GITLAB_CLIENT_ID),
-                auth_url: format!("https://{GITLAB_HOST}/oauth/authorize"),
-                token_url: format!("https://{GITLAB_HOST}/oauth/token"),
-                device_auth_url: format!("https://{GITLAB_HOST}/oauth/authorize_device"),
+                client_id: pick(client_id, default_client_id("gitlab", host)),
+                auth_url: format!("https://{host}/oauth/authorize"),
+                token_url: format!("https://{host}/oauth/token"),
+                device_auth_url: format!("https://{host}/oauth/authorize_device"),
                 scopes: vec!["api".to_string(), "read_repository".to_string()],
                 ..Default::default()
             });
-            c.keychain_service = "fastverk.gitlab".to_string();
-            c.keychain_account = "oauth".to_string();
         }
         "buildbuddy" => {
             // BuildBuddy authenticates with a static API key (no OAuth).
-            c.id = "buildbuddy".to_string();
             c.display_name = "BuildBuddy".to_string();
             c.provider = "buildbuddy".to_string();
-            c.host_patterns = vec!["remote.buildbuddy.io".to_string()];
+            c.host_patterns = vec![host.to_string()];
             c.header = "x-buildbuddy-api-key".to_string();
             c.auth_kind = AuthKind::ApiKey as i32;
-            c.keychain_service = "fastverk.buildbuddy".to_string();
             c.keychain_account = "api-key".to_string();
         }
         other => bail!("unknown provider preset: {other} (use github|gitlab|buildbuddy)"),
     }
+    if c.keychain_account.is_empty() {
+        c.keychain_account = "oauth".to_string();
+    }
+    c.keychain_service = format!("fastverk.{id}");
+    c.id = id;
     Ok(c)
 }
 
 /// Inputs for [`connect`].
 pub struct ConnectParams {
     pub provider: String,
-    /// OAuth App client id (required for OAuth providers).
+    /// Instance host (empty = the provider default). Lets the same
+    /// provider be connected across hosted / enterprise / self-hosted.
+    pub host: String,
+    /// OAuth App client id (empty = bundled default for known hosts).
     pub client_id: String,
     /// API key (required for AUTH_KIND_API_KEY providers, e.g. BuildBuddy).
     pub api_key: String,
@@ -187,7 +238,7 @@ pub struct ConnectParams {
 /// `prompt(user_code, verification_uri)` is shown during OAuth. Returns
 /// the persisted connection (which never carries the secret).
 pub fn connect(params: &ConnectParams, prompt: impl FnOnce(&str, &str)) -> Result<Connection> {
-    let mut conn = preset(&params.provider, &params.client_id)?;
+    let mut conn = preset(&params.provider, &params.host, &params.client_id)?;
     let secret = match conn.auth_kind() {
         AuthKind::Oauth => {
             let oauth_cfg = conn
@@ -244,16 +295,35 @@ mod tests {
 
     #[test]
     fn presets_have_expected_shape() {
-        let gh = preset("github", "cid123").unwrap();
+        // Default GitHub host.
+        let gh = preset("github", "", "cid123").unwrap();
+        assert_eq!(gh.id, "github");
         assert_eq!(gh.auth_kind(), AuthKind::Oauth);
         assert_eq!(gh.header, "Authorization");
         assert_eq!(gh.oauth.as_ref().unwrap().client_id, "cid123");
         assert!(gh.host_patterns.iter().any(|h| h == "github.com"));
 
-        let bb = preset("buildbuddy", "").unwrap();
+        // GitHub Enterprise instance: distinct id, host-derived endpoints.
+        let ghe = preset("github", "github.acme.com", "ent").unwrap();
+        assert_eq!(ghe.id, "github.acme.com");
+        assert_eq!(ghe.keychain_service, "fastverk.github.acme.com");
+        assert!(ghe.host_patterns.iter().any(|h| h == "github.acme.com"));
+        assert_eq!(
+            ghe.oauth.as_ref().unwrap().device_auth_url,
+            "https://github.acme.com/login/device/code"
+        );
+
+        // Self-hosted GitLab default + an arbitrary instance.
+        let gl = preset("gitlab", "", "").unwrap();
+        assert_eq!(gl.id, "gitlab");
+        assert!(gl.host_patterns.iter().any(|h| h == "gitlab.savvifi.com"));
+        let gl2 = preset("gitlab", "gitlab.example.com", "x").unwrap();
+        assert_eq!(gl2.id, "gitlab.example.com");
+
+        let bb = preset("buildbuddy", "", "").unwrap();
         assert_eq!(bb.auth_kind(), AuthKind::ApiKey);
         assert_eq!(bb.header, "x-buildbuddy-api-key");
 
-        assert!(preset("nope", "").is_err());
+        assert!(preset("nope", "", "").is_err());
     }
 }

@@ -80,6 +80,7 @@ impl Fvd for FvdService {
             .unwrap_or_default();
         let params = fvkit::connections::ConnectParams {
             provider: req.provider,
+            host: req.host,
             client_id,
             api_key: req.api_key,
         };
