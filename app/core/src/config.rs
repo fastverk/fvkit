@@ -37,6 +37,9 @@ pub struct Config {
     /// OAuth App client ids per provider ("github" -> "Iv1...."), used by
     /// the device-code connect flow. Not secret.
     pub client_ids: BTreeMap<String, String>,
+    /// Forges/orgs/groups mirrored into repos/ by `fv repos sync` + the
+    /// daemon scheduler.
+    pub sources: Vec<crate::repos::RepoSource>,
 }
 
 impl Default for Config {
@@ -55,6 +58,12 @@ impl Default for Config {
             bazel_version: "9.1.0".to_string(),
             disk_cache_max_gib: 50,
             client_ids: BTreeMap::new(),
+            sources: vec![crate::repos::RepoSource {
+                forge: "github".to_string(),
+                host: "github.com".to_string(),
+                group: "fastverk".to_string(),
+                include_archived: false,
+            }],
         }
     }
 }

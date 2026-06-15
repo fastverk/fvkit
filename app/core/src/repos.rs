@@ -9,11 +9,27 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::proto::{RepoSpec, RepoState, RepoSyncOutcome, RepoSyncReport, Worktree};
+
+/// A place to mirror into `repos/`: a GitHub org (github.com or an
+/// Enterprise host) or a GitLab group (gitlab.com or self-hosted).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSource {
+    /// "github" | "gitlab".
+    pub forge: String,
+    /// Instance host (empty = the forge default).
+    #[serde(default)]
+    pub host: String,
+    /// Org (GitHub) or group path (GitLab).
+    pub group: String,
+    #[serde(default)]
+    pub include_archived: bool,
+}
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339()
@@ -38,23 +54,40 @@ struct GhRepo {
     is_private: bool,
 }
 
-/// Enumerate every repo in a GitHub org via `gh`.
-pub fn enumerate_github(org: &str, include_archived: bool) -> Result<Vec<RepoSpec>> {
-    let mut args = vec![
-        "repo".to_string(),
-        "list".to_string(),
-        org.to_string(),
-        "--limit".to_string(),
-        "500".to_string(),
-        "--json".to_string(),
-        "name,sshUrl,isPrivate".to_string(),
-    ];
-    if !include_archived {
-        args.push("--no-archived".to_string());
+/// Enumerate every repo in a forge org/group on a given instance host.
+/// github.com or GitHub Enterprise via `gh`; gitlab.com or self-hosted
+/// GitLab via its REST API (token from the matching connection).
+pub fn enumerate(forge: &str, host: &str, group: &str, include_archived: bool) -> Result<Vec<RepoSpec>> {
+    match forge {
+        "" | "github" => enumerate_github(host, group, include_archived),
+        "gitlab" => enumerate_gitlab(host, group, include_archived),
+        other => bail!("unknown forge: {other} (use github|gitlab)"),
     }
-    let out = capture("gh", &args)
-        .context("enumerate org via `gh` (is gh installed + authenticated?)")?;
-    let repos: Vec<GhRepo> = serde_json::from_str(&out).context("parse `gh repo list` JSON")?;
+}
+
+fn enumerate_github(host: &str, org: &str, include_archived: bool) -> Result<Vec<RepoSpec>> {
+    let mut cmd = Command::new("gh");
+    cmd.args([
+        "repo", "list", org, "--limit", "500", "--json", "name,sshUrl,isPrivate",
+    ]);
+    if !include_archived {
+        cmd.arg("--no-archived");
+    }
+    // GitHub Enterprise: point gh at the instance.
+    if !host.is_empty() && host != "github.com" {
+        cmd.env("GH_HOST", host);
+    }
+    let out = cmd
+        .output()
+        .context("spawn `gh` (installed + authenticated?)")?;
+    if !out.status.success() {
+        bail!(
+            "`gh repo list {org}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let repos: Vec<GhRepo> =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).context("parse `gh` JSON")?;
     Ok(repos
         .into_iter()
         .map(|r| RepoSpec {
@@ -67,13 +100,97 @@ pub fn enumerate_github(org: &str, include_archived: bool) -> Result<Vec<RepoSpe
         .collect())
 }
 
-/// Enumerate by forge ("" / "github" supported; "gitlab" is a follow-up).
-pub fn enumerate(forge: &str, org: &str, include_archived: bool) -> Result<Vec<RepoSpec>> {
-    match forge {
-        "" | "github" => enumerate_github(org, include_archived),
-        "gitlab" => bail!("TODO: GitLab group enumeration via glab"),
-        other => bail!("unknown forge: {other}"),
+#[derive(Deserialize)]
+struct GlProject {
+    path: String,
+    #[serde(rename = "ssh_url_to_repo")]
+    ssh_url: String,
+    #[serde(default)]
+    visibility: String,
+}
+
+fn enumerate_gitlab(host: &str, group: &str, include_archived: bool) -> Result<Vec<RepoSpec>> {
+    let host = if host.is_empty() { "gitlab.com" } else { host };
+    let token = gitlab_token(host)?;
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("fastverk")
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("build http client")?;
+    let group_enc = group.replace('/', "%2F");
+    let archived = if include_archived { "" } else { "&archived=false" };
+
+    let mut out = Vec::new();
+    let mut page = 1u32;
+    loop {
+        let url = format!(
+            "https://{host}/api/v4/groups/{group_enc}/projects?include_subgroups=true&per_page=100&page={page}{archived}"
+        );
+        let resp = client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .with_context(|| format!("GitLab projects for group {group} on {host}"))?;
+        let next = resp
+            .headers()
+            .get("x-next-page")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let projects: Vec<GlProject> = resp.json().context("parse GitLab projects")?;
+        for p in projects {
+            out.push(RepoSpec {
+                dir: dir_name(&p.path),
+                name: p.path,
+                clone_url: p.ssh_url,
+                forge: "gitlab".to_string(),
+                is_private: p.visibility != "public",
+            });
+        }
+        match next.parse::<u32>() {
+            Ok(n) if n > 0 => page = n,
+            _ => break,
+        }
     }
+    Ok(out)
+}
+
+/// The access token for a GitLab host, from its connection's keychain item.
+fn gitlab_token(host: &str) -> Result<String> {
+    let reg = crate::connections::load()?;
+    let conn = crate::connections::match_host(&reg, host)
+        .with_context(|| format!("no connection for {host} — run `fv connect gitlab --host {host}`"))?;
+    crate::credstore::get(&conn.keychain_service, &conn.keychain_account)?
+        .with_context(|| format!("no token in keychain for {host}"))
+}
+
+/// Sync every configured source (clone missing, optionally pull existing)
+/// into `repos_dir`. Returns one report per source.
+pub fn sync_sources(
+    repos_dir: &Path,
+    sources: &[RepoSource],
+    meta_repo_name: &str,
+    pull: bool,
+    validate_only: bool,
+) -> Result<Vec<RepoSyncReport>> {
+    let mut reports = Vec::new();
+    for s in sources {
+        let specs = enumerate(&s.forge, &s.host, &s.group, s.include_archived)?;
+        let report = sync(
+            repos_dir,
+            &specs,
+            &s.group,
+            &s.forge,
+            &SyncOpts {
+                pull,
+                validate_only,
+                meta_repo_name: meta_repo_name.to_string(),
+            },
+        )?;
+        reports.push(report);
+    }
+    Ok(reports)
 }
 
 pub struct SyncOpts {
@@ -284,21 +401,6 @@ pub fn worktree_remove(path: &Path, force: bool) -> Result<bool> {
 }
 
 // ─── git/process helpers ───────────────────────────────────────────
-
-fn capture(bin: &str, args: &[String]) -> Result<String> {
-    let out = Command::new(bin)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawn `{bin}`"))?;
-    if !out.status.success() {
-        bail!(
-            "`{bin} {}` failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
 
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")

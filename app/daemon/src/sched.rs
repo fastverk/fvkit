@@ -32,6 +32,31 @@ pub async fn run() {
 }
 
 async fn run_once() {
+    // Keep the configured org/group repos in sync with the repos volume.
+    if let Ok(cfg) = fvkit::config::Config::load() {
+        let (repos_dir, meta, sources) = (cfg.repos_dir(), cfg.meta_repo_name(), cfg.sources);
+        if !sources.is_empty() {
+            match tokio::task::spawn_blocking(move || {
+                fvkit::repos::sync_sources(&repos_dir, &sources, &meta, true, false)
+            })
+            .await
+            {
+                Ok(Ok(reports)) => {
+                    let n = |a: &str| {
+                        reports
+                            .iter()
+                            .flat_map(|r| &r.outcomes)
+                            .filter(|o| o.action == a)
+                            .count()
+                    };
+                    tracing::info!(cloned = n("cloned"), updated = n("updated"), "scheduler: repo sync");
+                }
+                Ok(Err(e)) => tracing::warn!(error = %e, "scheduler: repo sync failed"),
+                Err(e) => tracing::warn!(error = %e, "scheduler: repo sync panicked"),
+            }
+        }
+    }
+
     tracing::info!("scheduler: maintenance run");
     match tokio::task::spawn_blocking(|| fvkit::maintain::run(false, &[])).await {
         Ok(Ok(report)) => {

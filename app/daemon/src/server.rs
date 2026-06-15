@@ -164,43 +164,48 @@ impl Fvd for FvdService {
     ) -> Result<Response<RepoSyncReport>, Status> {
         let req = request.into_inner();
         let cfg = fvkit::config::Config::load().map_err(internal)?;
-        let org = if req.org.is_empty() { cfg.org.clone() } else { req.org };
-        let forge = if req.forge.is_empty() {
-            cfg.forge.clone()
-        } else {
-            req.forge
-        };
-        let specs =
-            fvkit::repos::enumerate(&forge, &org, req.include_archived).map_err(internal)?;
-        let report = fvkit::repos::sync(
-            &cfg.repos_dir(),
-            &specs,
-            &org,
-            &forge,
-            &fvkit::repos::SyncOpts {
-                pull: req.pull,
-                validate_only: req.validate_only,
-                meta_repo_name: cfg.meta_repo_name(),
-            },
-        )
+        let (repos_dir, meta, sources) =
+            (cfg.repos_dir(), cfg.meta_repo_name(), cfg.sources.clone());
+        let reports = tokio::task::spawn_blocking(move || {
+            fvkit::repos::sync_sources(&repos_dir, &sources, &meta, req.pull, req.validate_only)
+        })
+        .await
+        .map_err(internal)?
         .map_err(internal)?;
-        Ok(Response::new(report))
+        // Merge per-source reports into one for the unary response.
+        let mut merged = RepoSyncReport {
+            org: "all".to_string(),
+            forge: "multi".to_string(),
+            validate_only: req.validate_only,
+            ..Default::default()
+        };
+        for r in reports {
+            if merged.started_at.is_empty() {
+                merged.started_at = r.started_at;
+            }
+            merged.finished_at = r.finished_at;
+            merged.outcomes.extend(r.outcomes);
+        }
+        Ok(Response::new(merged))
     }
 
     async fn repos_status(
         &self,
         request: Request<ReposStatusRequest>,
     ) -> Result<Response<ReposStatusResponse>, Status> {
-        let req = request.into_inner();
+        let _req = request.into_inner();
         let cfg = fvkit::config::Config::load().map_err(internal)?;
-        let org = if req.org.is_empty() { cfg.org.clone() } else { req.org };
-        let forge = if req.forge.is_empty() {
-            cfg.forge.clone()
-        } else {
-            req.forge
-        };
-        let specs = fvkit::repos::enumerate(&forge, &org, true).map_err(internal)?;
-        let repos = fvkit::repos::status(&cfg.repos_dir(), &specs);
+        let (repos_dir, sources) = (cfg.repos_dir(), cfg.sources.clone());
+        let repos = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<_>> {
+            let mut specs = Vec::new();
+            for s in &sources {
+                specs.extend(fvkit::repos::enumerate(&s.forge, &s.host, &s.group, true)?);
+            }
+            Ok(fvkit::repos::status(&repos_dir, &specs))
+        })
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
         Ok(Response::new(ReposStatusResponse { repos }))
     }
 
