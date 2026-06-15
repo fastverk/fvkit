@@ -156,13 +156,15 @@ fn enumerate_gitlab(host: &str, group: &str, include_archived: bool) -> Result<V
     Ok(out)
 }
 
-/// The access token for a GitLab host, from its connection's keychain item.
+/// The access token for a GitLab host, resolved from its connection's
+/// secret refs (keychain locally, the canonical env var in CI).
 fn gitlab_token(host: &str) -> Result<String> {
     let reg = crate::connections::load()?;
     let conn = crate::connections::match_host(&reg, host)
         .with_context(|| format!("no connection for {host} — run `fv connect gitlab --host {host}`"))?;
-    crate::credstore::get(&conn.keychain_service, &conn.keychain_account)?
-        .with_context(|| format!("no token in keychain for {host}"))
+    crate::secretstore::Resolver::standard()
+        .resolve(&conn.secret_refs)
+        .with_context(|| format!("no token for {host}"))
 }
 
 /// Sync every configured source (clone missing, optionally pull existing)
