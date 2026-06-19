@@ -29,6 +29,24 @@ pub fn host_of(uri: &str) -> &str {
     }
 }
 
+/// Extract the path component (`/...`, no query/fragment) from a request URI.
+/// Returns `"/"` when there's no explicit path. Used by `diagnose` output and
+/// by path-aware connection routing.
+#[must_use]
+pub fn path_of(uri: &str) -> &str {
+    let after_scheme = match uri.find("://") {
+        Some(i) => &uri[i + 3..],
+        None => uri,
+    };
+    let path_start = match after_scheme.find('/') {
+        Some(i) => i,
+        None => return "/",
+    };
+    let rest = &after_scheme[path_start..];
+    let end = rest.find(['?', '#']).unwrap_or(rest.len());
+    &rest[..end]
+}
+
 /// Extract the `"uri"` field from a Bazel credential-helper request body
 /// (`{"uri":"https://…"}`). Dependency-free scanner that honors backslash
 /// escapes — the request shape is trivial, so this avoids a JSON dep in
@@ -75,6 +93,16 @@ mod tests {
         assert_eq!(host_of("https://[::1]:8080/p"), "[::1]");
         assert_eq!(host_of("github.com/foo"), "github.com");
         assert_eq!(host_of("https://example.com?q=1"), "example.com");
+    }
+
+    #[test]
+    fn extracts_path() {
+        use super::path_of;
+        assert_eq!(path_of("https://gitlab.savvifi.com/api/v4/projects/137/x"), "/api/v4/projects/137/x");
+        assert_eq!(path_of("https://gitlab.savvifi.com"), "/");
+        assert_eq!(path_of("https://gitlab.savvifi.com/"), "/");
+        assert_eq!(path_of("https://host:443/a/b?q=1#f"), "/a/b");
+        assert_eq!(path_of("host/p/q"), "/p/q");
     }
 
     #[test]

@@ -10,7 +10,7 @@
 use anyhow::{bail, Context, Result};
 use prost::Message;
 
-use crate::proto::{AuthKind, Connection, ConnectionRegistry, OAuthConfig};
+use crate::proto::{secret_ref::Store, AuthKind, Connection, ConnectionRegistry, OAuthConfig};
 use crate::{oauth, paths, secretstore, uri};
 
 /// Load the persisted registry, or an empty one when none exists.
@@ -115,6 +115,182 @@ pub fn resolve(req_uri: &str) -> Result<Option<ResolvedCred>> {
         header: conn.header.clone(),
         value: format!("{}{secret}", conn.value_prefix),
     }))
+}
+
+// ─── diagnose: explain how a request URI resolves (no secret values) ────
+
+/// One `secret_ref`'s resolution attempt, for `diagnose`. Carries no secret —
+/// only where it reads from and whether that source is present.
+pub struct RefTrace {
+    /// Backend scheme: `keychain` / `env` / `file` / `unknown`.
+    pub backend: String,
+    /// Where it reads from: env var names (canonical + aliases), keychain
+    /// `service/account`, or file path.
+    pub target: String,
+    /// The concrete source that produced a value (e.g. the env var name that
+    /// was set), or `None` if this ref yielded nothing.
+    pub yielded_from: Option<String>,
+}
+
+/// The connection a host matched, and from which registry.
+pub struct MatchedConn {
+    pub id: String,
+    pub host_patterns: Vec<String>,
+    /// `true` = matched the user's persisted registry; `false` = the built-in
+    /// default registry (the CI / fresh-machine path).
+    pub from_user_registry: bool,
+}
+
+/// A full, secret-free resolution trace for a request URI — what `cred-helper
+/// diagnose <uri>` renders. Mirrors [`resolve`]'s logic so it explains exactly
+/// what the hot path would do.
+pub struct ResolveExplain {
+    pub host: String,
+    pub path: String,
+    pub matched: Option<MatchedConn>,
+    pub refs: Vec<RefTrace>,
+    /// The header that would be emitted (e.g. `Authorization`), or `None` for
+    /// an anonymous fetch.
+    pub chosen_header: Option<String>,
+    /// Length of the emitted header value (prefix + secret) — never the value.
+    pub chosen_value_len: usize,
+    /// `backend:source` of the ref that won (e.g. `env:FASTVERK_TOKEN_…`).
+    pub chosen_source: Option<String>,
+}
+
+/// First non-empty of an env ref's `name` then `aliases` — the var the env
+/// backend would actually read (mirrors `secretstore::EnvStore::get`).
+fn env_source(name: &str, aliases: &[String]) -> Option<String> {
+    std::iter::once(name)
+        .chain(aliases.iter().map(String::as_str))
+        .filter(|n| !n.is_empty())
+        .find(|n| std::env::var(n).is_ok_and(|v| !v.is_empty()))
+        .map(String::from)
+}
+
+/// Describe a single ref: `(backend, target, concrete-source-if-present)`.
+fn trace_ref(resolver: &secretstore::Resolver, r: &crate::proto::SecretRef) -> RefTrace {
+    let yields = resolver.get_ref(r).is_some();
+    match &r.store {
+        Some(Store::Env(e)) => {
+            let names: Vec<&str> = std::iter::once(e.name.as_str())
+                .chain(e.aliases.iter().map(String::as_str))
+                .filter(|n| !n.is_empty())
+                .collect();
+            RefTrace {
+                backend: "env".to_string(),
+                target: names.join(" → "),
+                yielded_from: env_source(&e.name, &e.aliases),
+            }
+        }
+        Some(Store::Keychain(k)) => RefTrace {
+            backend: "keychain".to_string(),
+            target: format!("{}/{}", k.service, k.account),
+            yielded_from: yields.then(|| format!("{}/{}", k.service, k.account)),
+        },
+        Some(Store::File(f)) => RefTrace {
+            backend: "file".to_string(),
+            target: f.path.clone(),
+            yielded_from: yields.then(|| f.path.clone()),
+        },
+        None => RefTrace {
+            backend: "unknown".to_string(),
+            target: String::new(),
+            yielded_from: None,
+        },
+    }
+}
+
+/// Explain how `req_uri` resolves: the matched connection, every `secret_ref`
+/// tried (with which source is present), and the header that would be sent.
+/// Reads no secret values — safe to print in CI logs.
+#[must_use]
+pub fn explain(req_uri: &str) -> ResolveExplain {
+    let host = uri::host_of(req_uri).to_string();
+    let path = uri::path_of(req_uri).to_string();
+    let mut out = ResolveExplain {
+        host: host.clone(),
+        path,
+        matched: None,
+        refs: Vec::new(),
+        chosen_header: None,
+        chosen_value_len: 0,
+        chosen_source: None,
+    };
+    if host.is_empty() {
+        return out;
+    }
+    let reg = load().unwrap_or_default();
+    let (conn, from_user) = match match_host(&reg, &host) {
+        Some(c) => (c.clone(), true),
+        None => match match_host(&default_registry(), &host) {
+            Some(c) => (c.clone(), false),
+            None => return out,
+        },
+    };
+    out.matched = Some(MatchedConn {
+        id: conn.id.clone(),
+        host_patterns: conn.host_patterns.clone(),
+        from_user_registry: from_user,
+    });
+
+    let resolver = secretstore::Resolver::standard();
+    for r in &conn.secret_refs {
+        let trace = trace_ref(&resolver, r);
+        // The first ref that yields wins — record what the header would be.
+        if out.chosen_header.is_none() && trace.yielded_from.is_some() {
+            if let Some(secret) = resolver.get_ref(r) {
+                out.chosen_header = Some(conn.header.clone());
+                out.chosen_value_len = conn.value_prefix.len() + secret.len();
+                out.chosen_source = trace
+                    .yielded_from
+                    .as_ref()
+                    .map(|s| format!("{}:{s}", trace.backend));
+            }
+        }
+        out.refs.push(trace);
+    }
+    out
+}
+
+impl std::fmt::Display for ResolveExplain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "cred-helper diagnose")?;
+        writeln!(f, "  host: {}", self.host)?;
+        writeln!(f, "  path: {}", self.path)?;
+        match &self.matched {
+            None => {
+                writeln!(f, "  matched connection: <none> → anonymous fetch")?;
+                return Ok(());
+            }
+            Some(m) => {
+                writeln!(
+                    f,
+                    "  matched connection: {} ({} registry)",
+                    m.id,
+                    if m.from_user_registry { "user" } else { "default" },
+                )?;
+                writeln!(f, "  host patterns: {}", m.host_patterns.join(", "))?;
+            }
+        }
+        writeln!(f, "  secret refs (in order):")?;
+        for (i, r) in self.refs.iter().enumerate() {
+            let status = match &r.yielded_from {
+                Some(s) => format!("PRESENT (from {s})"),
+                None => "absent".to_string(),
+            };
+            writeln!(f, "    {}. [{}] {} — {status}", i + 1, r.backend, r.target)?;
+        }
+        match (&self.chosen_header, &self.chosen_source) {
+            (Some(h), Some(src)) => writeln!(
+                f,
+                "  → sends: {h}: <redacted, len={}> via {src}",
+                self.chosen_value_len,
+            )?,
+            _ => writeln!(f, "  → sends: nothing (anonymous — no ref yielded a secret)")?,
+        }
+        Ok(())
+    }
 }
 
 /// The built-in connections — GitHub, GitLab, BuildBuddy — each carrying a
