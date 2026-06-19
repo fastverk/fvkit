@@ -470,10 +470,21 @@ fn env_aliases(provider: &str, host: &str) -> Vec<String> {
     // Self-hosted savvi GitLab: the org's CI vars, in the precedence studio
     // CI expects (AION_NPM_TOKEN highest), ahead of the generic name.
     if host == "gitlab.savvifi.com" {
-        return ["AION_NPM_TOKEN", "GITLAB_SAVVIFI_TOKEN", "GITLAB_TOKEN"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        // FASTVERK_TOKEN_GITLAB_SAVVIFI_COM first: the org's CI + the infra/images
+        // bazelrc set this name explicitly. (The DEFAULT connection's id is
+        // `gitlab`, so its *canonical* var is FASTVERK_TOKEN_GITLAB — without this
+        // alias, the host-specific name silently does nothing and resolution falls
+        // through to AION_NPM_TOKEN; the cause of a real CI 401 hunt.) Then the
+        // ecosystem names, AION_NPM_TOKEN highest per studio CI precedence.
+        return [
+            "FASTVERK_TOKEN_GITLAB_SAVVIFI_COM",
+            "AION_NPM_TOKEN",
+            "GITLAB_SAVVIFI_TOKEN",
+            "GITLAB_TOKEN",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
     }
     match provider {
         "github" => vec!["GITHUB_TOKEN", "GH_TOKEN"],
