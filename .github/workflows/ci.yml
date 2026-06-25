@@ -39,3 +39,25 @@ jobs:
             https://github.com/bazelbuild/buildtools/releases/download/v7.3.1/buildifier-linux-amd64
           chmod +x /usr/local/bin/buildifier
       - run: buildifier --mode=check --lint=warn -r .
+
+  connection-proto-contract:
+    # fvkit OWNS proto/fastverk/v1 now. The connection-registry wire contract is
+    # shared with the standalone credential helper (fastverk/cred-helper): both
+    # read/write the same connections.pb. Their Rust + provider policy differ,
+    # but the connection.proto SCHEMA must not drift, or the on-disk registry
+    # stops round-tripping between fvd/fv and the helper. Guard the schema
+    # (comments are free) against cred-helper's published proto.
+    name: connection.proto schema matches cred-helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: schema parity with fastverk/cred-helper
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/fastverk/cred-helper/main/proto/fastverk/v1/connection.proto -o /tmp/cr.proto
+          norm() { grep -vE '^[[:space:]]*//|^[[:space:]]*$' "$1"; }
+          if ! diff <(norm /tmp/cr.proto) <(norm proto/fastverk/v1/connection.proto); then
+            echo "::error::connection.proto schema drifted from fastverk/cred-helper. Sync the schema."
+            exit 1
+          fi
+          echo "connection.proto schema is in sync with cred-helper."
