@@ -8,7 +8,8 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 /// App release repo (owner/name) the updater watches.
 const RELEASE_REPO: &str = "fastverk/fastverk";
@@ -151,13 +152,13 @@ pub fn check() -> Result<UpdateInfo> {
 pub fn apply(force: bool) -> Result<()> {
     let info = check()?;
     if !force && !info.available {
-        anyhow::bail!(
+        crate::bail!(
             "already up to date (v{}); use --force to reinstall the latest",
             info.current
         );
     }
     if info.asset_api_url.is_empty() && info.url.is_empty() {
-        anyhow::bail!("the latest release ({}) has no .dmg asset", info.latest);
+        crate::bail!("the latest release ({}) has no .dmg asset", info.latest);
     }
     let bytes = download_dmg(&info).context("download release dmg")?;
 
@@ -217,7 +218,7 @@ fn swap_app_from_dmg(dmg: &std::path::Path) -> Result<()> {
 
     let ok = |c: &mut Command, what: &str| -> Result<()> {
         let s = c.status().with_context(|| format!("run {what}"))?;
-        anyhow::ensure!(s.success(), "{what} failed");
+        crate::ensure!(s.success(), "{what} failed");
         Ok(())
     };
     ok(
@@ -235,7 +236,7 @@ fn swap_app_from_dmg(dmg: &std::path::Path) -> Result<()> {
     // Always detach, even if the copy fails.
     let copy = (|| -> Result<()> {
         let src = mnt.join("fastverk.app");
-        anyhow::ensure!(src.is_dir(), "dmg has no fastverk.app");
+        crate::ensure!(src.is_dir(), "dmg has no fastverk.app");
         let _ = std::fs::remove_dir_all(app);
         ok(
             Command::new("cp").arg("-R").arg(&src).arg("/Applications/"),

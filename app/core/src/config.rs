@@ -7,7 +7,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::paths;
@@ -100,7 +101,7 @@ impl Config {
         let p = Self::path()?;
         if p.exists() {
             let s = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-            toml::from_str(&s).with_context(|| format!("parse {}", p.display()))
+            Ok(toml::from_str(&s).with_context(|| format!("parse {}", p.display()))?)
         } else {
             Ok(Self::default())
         }
@@ -111,6 +112,6 @@ impl Config {
         paths::ensure_config_dir()?;
         let p = Self::path()?;
         let s = toml::to_string_pretty(self).context("serialize config")?;
-        std::fs::write(&p, s).with_context(|| format!("write {}", p.display()))
+        Ok(std::fs::write(&p, s).with_context(|| format!("write {}", p.display()))?)
     }
 }

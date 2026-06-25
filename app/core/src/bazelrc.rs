@@ -9,7 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 use crate::config::Config;
 use crate::paths;

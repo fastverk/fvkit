@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-use anyhow::Result;
+use crate::Result;
 
 use crate::config::Config;
 use crate::proto::{MaintenanceReport, MaintenanceTask};

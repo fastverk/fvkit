@@ -19,7 +19,8 @@
 //! next ref is tried, so a locked/absent keychain in CI degrades to the env
 //! var rather than failing the fetch.
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 use crate::credstore;
 use crate::proto::{secret_ref::Store, EnvRef, FileRef, KeychainRef, SecretRef};

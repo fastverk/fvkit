@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::{Channel, Endpoint, Uri};
@@ -65,9 +66,9 @@ pub async fn connect_default() -> Result<FvdClient<Channel>> {
             return Ok(client);
         }
     }
-    connect(&sock)
+    Ok(connect(&sock)
         .await
-        .context("fvd did not come up on its socket")
+        .context("fvd did not come up on its socket")?)
 }
 
 /// Spawn the `fvd` daemon detached.

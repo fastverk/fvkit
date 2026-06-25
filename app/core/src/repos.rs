@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::proto::{RepoSpec, RepoState, RepoSyncOutcome, RepoSyncReport, Worktree};
@@ -162,9 +163,9 @@ fn gitlab_token(host: &str) -> Result<String> {
     let reg = crate::connections::load()?;
     let conn = crate::connections::match_host(&reg, host)
         .with_context(|| format!("no connection for {host} — run `fv connect gitlab --host {host}`"))?;
-    crate::secretstore::Resolver::standard()
+    Ok(crate::secretstore::Resolver::standard()
         .resolve(&conn.secret_refs)
-        .with_context(|| format!("no token for {host}"))
+        .with_context(|| format!("no token for {host}"))?)
 }
 
 /// Sync every configured source (clone missing, optionally pull existing)

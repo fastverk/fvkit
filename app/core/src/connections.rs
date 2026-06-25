@@ -7,7 +7,8 @@
 //! (and `fvd`'s `GetCredentials`) use to turn a request URI into a
 //! header + value.
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 use prost::Message;
 
 use crate::proto::{secret_ref::Store, AuthKind, Connection, ConnectionRegistry, OAuthConfig};
@@ -46,7 +47,7 @@ fn migrate(reg: &mut ConnectionRegistry) {
 pub fn save(reg: &ConnectionRegistry) -> Result<()> {
     paths::ensure_config_dir()?;
     let p = paths::registry_path()?;
-    std::fs::write(&p, reg.encode_to_vec()).with_context(|| format!("write {}", p.display()))
+    Ok(std::fs::write(&p, reg.encode_to_vec()).with_context(|| format!("write {}", p.display()))?)
 }
 
 /// Remove a connection by id; returns whether one was removed. The

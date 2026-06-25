@@ -8,7 +8,8 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 use serde::Deserialize;
 
 use crate::proto::OAuthConfig;

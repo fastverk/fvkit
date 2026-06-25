@@ -12,7 +12,8 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 use crate::bazelrc;
 
@@ -36,12 +37,12 @@ pub fn ensure_installed(_pinned_bazel_version: &str) -> Result<PathBuf> {
         let arch = match std::env::consts::ARCH {
             "aarch64" => "arm64",
             "x86_64" => "amd64",
-            other => anyhow::bail!("unsupported arch for bazelisk: {other}"),
+            other => crate::bail!("unsupported arch for bazelisk: {other}"),
         };
         let os = match std::env::consts::OS {
             "macos" => "darwin",
             "linux" => "linux",
-            other => anyhow::bail!("unsupported os for bazelisk: {other}"),
+            other => crate::bail!("unsupported os for bazelisk: {other}"),
         };
         let url = format!(
             "https://github.com/bazelbuild/bazelisk/releases/download/{BAZELISK_VERSION}/bazelisk-{os}-{arch}"
@@ -49,7 +50,8 @@ pub fn ensure_installed(_pinned_bazel_version: &str) -> Result<PathBuf> {
         let bytes = reqwest::blocking::Client::builder()
             .user_agent("fastverk")
             .timeout(std::time::Duration::from_secs(120))
-            .build()?
+            .build()
+            .context("build http client")?
             .get(&url)
             .send()
             .and_then(reqwest::blocking::Response::error_for_status)
@@ -61,7 +63,8 @@ pub fn ensure_installed(_pinned_bazel_version: &str) -> Result<PathBuf> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bazelisk, std::fs::Permissions::from_mode(0o755))?;
+            std::fs::set_permissions(&bazelisk, std::fs::Permissions::from_mode(0o755))
+                .with_context(|| format!("chmod {}", bazelisk.display()))?;
         }
     }
 

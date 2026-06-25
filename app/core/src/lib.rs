@@ -23,6 +23,35 @@ pub mod proto {
         tonic::include_file_descriptor_set!("fastverk_descriptor");
 }
 
+mod error;
+pub use error::{Error, Result};
+
+/// Like `anyhow::bail!`, but returns a [`crate::Error`] so it can be used
+/// inside fns that return [`crate::Result`]. (`anyhow::bail!` expands to
+/// `return Err(anyhow::Error)`, which the blanket `From` can't fix because
+/// there's no `?` to trigger the conversion.)
+macro_rules! bail {
+    ($($arg:tt)*) => {
+        return ::core::result::Result::Err($crate::Error::from(::anyhow::anyhow!($($arg)*)))
+    };
+}
+
+/// Like `anyhow::ensure!`, but returns a [`crate::Error`] (see [`bail!`]).
+macro_rules! ensure {
+    ($cond:expr $(,)?) => {
+        if !($cond) {
+            $crate::bail!(::core::concat!("Condition failed: `", ::core::stringify!($cond), "`"));
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            $crate::bail!($($arg)*);
+        }
+    };
+}
+
+pub(crate) use {bail, ensure};
+
 pub mod bazelrc;
 pub mod config;
 pub mod connections;

@@ -8,7 +8,8 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 fn project_dirs() -> Option<directories::ProjectDirs> {
     directories::ProjectDirs::from("", "", "fastverk")

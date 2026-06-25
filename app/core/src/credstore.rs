@@ -56,18 +56,18 @@ mod backend {
 }
 
 /// Read the current secret for a keychain item, or `None` if absent.
-pub fn get(service: &str, account: &str) -> anyhow::Result<Option<String>> {
-    backend::get(service, account)
+pub fn get(service: &str, account: &str) -> crate::Result<Option<String>> {
+    Ok(backend::get(service, account)?)
 }
 
 /// Store (or replace) the secret for a keychain item.
-pub fn set(service: &str, account: &str, secret: &str) -> anyhow::Result<()> {
-    backend::set(service, account, secret)
+pub fn set(service: &str, account: &str, secret: &str) -> crate::Result<()> {
+    Ok(backend::set(service, account, secret)?)
 }
 
 /// Delete a keychain item; succeeds even if it was already absent.
-pub fn delete(service: &str, account: &str) -> anyhow::Result<()> {
-    backend::delete(service, account)
+pub fn delete(service: &str, account: &str) -> crate::Result<()> {
+    Ok(backend::delete(service, account)?)
 }
 
 #[cfg(all(test, target_os = "macos"))]

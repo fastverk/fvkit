@@ -11,7 +11,7 @@ use std::process::Command;
 
 #[cfg(target_os = "macos")]
 use anyhow::Context;
-use anyhow::{bail, Result};
+use crate::Result;
 
 use crate::proto::{VolumeAudit, VolumeDisposition, VolumeSpec, VolumeState};
 

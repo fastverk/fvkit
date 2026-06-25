@@ -5,7 +5,8 @@
 
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 /// Run a shell command with administrator privileges via
 /// `osascript -e 'do shell script "…" with administrator privileges'`.

@@ -5,7 +5,8 @@
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use crate::Result;
+use anyhow::Context;
 
 /// LaunchAgent label / unit name.
 pub const LABEL: &str = "com.fastverk.fvd";
