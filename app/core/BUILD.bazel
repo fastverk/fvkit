@@ -7,27 +7,30 @@ sources exported by //proto/fastverk/v1 and walks `../../proto/...` from
 CARGO_MANIFEST_DIR = `app/core`.
 """
 
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
 cargo_build_script(
     name = "build_script",
     srcs = ["build.rs"],
+    build_script_env = {
+        "PROTOC": "$(execpath @protobuf//:protoc)",
+    },
     data = [
-        "//proto/fastverk/v1:fvd.proto",
         "//proto/fastverk/v1:connection.proto",
+        "//proto/fastverk/v1:fvd.proto",
         "//proto/fastverk/v1:maintenance.proto",
         "//proto/fastverk/v1:repos.proto",
     ],
     edition = "2021",
-    build_script_env = {
-        "PROTOC": "$(execpath @protobuf//:protoc)",
-    },
     tools = ["@protobuf//:protoc"],
-    deps = all_crate_deps(build = True, package_name = "app/core"),
+    deps = all_crate_deps(
+        package_name = "app/core",
+        build = True,
+    ),
 )
 
 rust_library(
@@ -41,7 +44,10 @@ rust_library(
     # build leaves the literal, which fvkit::version() falls back from.
     rustc_env = {"FASTVERK_VERSION": "{STABLE_FASTVERK_VERSION}"},
     stamp = 1,
-    deps = [":build_script"] + all_crate_deps(normal = True, package_name = "app/core"),
+    deps = [":build_script"] + all_crate_deps(
+        package_name = "app/core",
+        normal = True,
+    ),
 )
 
 rust_test(
@@ -50,4 +56,7 @@ rust_test(
     edition = "2021",
 )
 
-exports_files(["Cargo.toml", "build.rs"])
+exports_files([
+    "Cargo.toml",
+    "build.rs",
+])

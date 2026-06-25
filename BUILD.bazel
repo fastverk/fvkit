@@ -1,0 +1,14 @@
+"""fvkit — fastverk core/runtime module.
+
+The workspace root. Two crates live under app/: `fvkit` (lib,
+//app/core:fvkit) and `fvd` (bin, //app/daemon:fvd). The proto contract is
+at //proto/fastverk/v1. Exported here so crate_universe's from_cargo can read
+the root Cargo.lock + Cargo.toml."""
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "MODULE.bazel",
+    "Cargo.toml",
+    "Cargo.lock",
+])

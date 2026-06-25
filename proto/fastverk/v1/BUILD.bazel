@@ -1,142 +1,17 @@
-"""fastverk app gRPC + registry contracts.
+"""fastverk app gRPC + registry contracts (fastverk.v1).
 
-The fvd daemon contract plus the persisted DTOs (connection registry,
-volume + maintenance state). Two consumers, two target families:
+The fvd daemon contract (fvd.proto) plus the persisted DTOs: the connection
+registry, volume + maintenance state, and repos. fvd.proto imports the other
+three (as `fastverk/v1/<file>.proto`).
 
-  * Rust codegen — `polyglot_proto` exports each .proto so the
-    cargo_build_script in //app/core (build.rs, tonic-build) can
-    data-dep `:<file>.proto`, the same convention services/* use.
-
-  * AIP linting — `aip_proto_library` + `aip_proto_lint` (rules_aip,
-    resolved from the fastverk registry) run Google's api-linter over
-    the contract. `bazel test //proto/fastverk/v1:all` runs them.
-    Resource-CRUD / HTTP-gateway rules are disabled: fvd is a local
-    gRPC control plane (a Unix-socket daemon), not a googleapis
-    resource API, so AIP-127/131/132/158/203 don't apply.
-"""
-
-load("@rules_aip//aip:defs.bzl", "aip_proto_library", "aip_proto_lint")
-load("//tools/proto:defs.bzl", "polyglot_proto")
+Compiled by build.rs (tonic-build) under the cargo_build_script in
+//app/core; the sources are exported here so that build script can data-dep
+each .proto. Self-contained — no proto_library / codegen rule, mirroring how
+forge's proto package exports its single .proto for the build.rs to read."""
 
 package(default_visibility = ["//visibility:public"])
 
-# ─── Rust codegen exports (consumed by //app/core build.rs) ─────────
-polyglot_proto(
-    name = "connection",
-    src = "connection.proto",
-    languages = ["rust"],
-)
-
-polyglot_proto(
-    name = "maintenance",
-    src = "maintenance.proto",
-    languages = ["rust"],
-)
-
-polyglot_proto(
-    name = "repos",
-    src = "repos.proto",
-    languages = ["rust"],
-)
-
-polyglot_proto(
-    name = "fvd",
-    src = "fvd.proto",
-    languages = ["rust"],
-    deps = [
-        ":connection_proto",
-        ":maintenance_proto",
-        ":repos_proto",
-    ],
-)
-
-# ─── AIP linting ───────────────────────────────────────────────────
-# strip_import_prefix = "/proto" makes the descriptor import path
-# `fastverk/v1/<file>.proto` match `package fastverk.v1` (AIP-191) and
-# the `import "fastverk/v1/..."` statements in fvd.proto.
-aip_proto_library(
-    name = "connection_aip_proto",
-    srcs = ["connection.proto"],
-    strip_import_prefix = "/proto",
-)
-
-aip_proto_library(
-    name = "maintenance_aip_proto",
-    srcs = ["maintenance.proto"],
-    strip_import_prefix = "/proto",
-)
-
-aip_proto_library(
-    name = "repos_aip_proto",
-    srcs = ["repos.proto"],
-    strip_import_prefix = "/proto",
-)
-
-aip_proto_library(
-    name = "fvd_aip_proto",
-    srcs = ["fvd.proto"],
-    strip_import_prefix = "/proto",
-    deps = [
-        ":connection_aip_proto",
-        ":maintenance_aip_proto",
-        ":repos_aip_proto",
-    ],
-)
-
-# Rules disabled for a local gRPC daemon control plane (not a
-# resource-oriented googleapis service, and Rust-only codegen). Every
-# other AIP rule — comments, naming, package/version layout, enum zero
-# value, signed integers — is enforced.
-#   core::0123 — google.api.resource annotation (not googleapis resources).
-#   core::0127 — google.api.http annotations (no HTTP gateway).
-#   core::0131 — Get* standard-method semantics (these are RPCs).
-#   core::0132 — List* standard-method semantics.
-#   core::0136 — custom-method naming (control-plane RPCs, not resource methods).
-#   core::0140::prepositions — RFC 3339 string "*_at" timestamps, not
-#     google.protobuf.Timestamp resource fields.
-#   core::0158 — pagination (fixed local lists).
-#   core::0191::java-* — Java codegen options (fastverk generates Rust).
-#   core::0192::has-comments — the protos ARE fully commented, but
-#     rules_aip lints off Bazel proto_library descriptor sets, which omit
-#     source_code_info, so api-linter can't see the comments. (rules_aip
-#     follow-up: emit a --include_source_info descriptor for the direct
-#     sources; then re-enable this.)
-#   core::0203 — field_behavior annotations (not a googleapis resource).
-_DAEMON_API_DISABLES = [
-    "core::0123",
-    "core::0127",
-    "core::0131",
-    "core::0132",
-    "core::0136",
-    "core::0140::prepositions",
-    "core::0158",
-    "core::0191::java-multiple-files",
-    "core::0191::java-outer-classname",
-    "core::0191::java-package",
-    "core::0192::has-comments",
-    "core::0203",
-]
-
-aip_proto_lint(
-    name = "connection_aip_lint",
-    proto = ":connection_aip_proto",
-    disable_rules = _DAEMON_API_DISABLES,
-)
-
-aip_proto_lint(
-    name = "maintenance_aip_lint",
-    proto = ":maintenance_aip_proto",
-    disable_rules = _DAEMON_API_DISABLES,
-)
-
-aip_proto_lint(
-    name = "repos_aip_lint",
-    proto = ":repos_aip_proto",
-    disable_rules = _DAEMON_API_DISABLES,
-)
-
-aip_proto_lint(
-    name = "fvd_aip_lint",
-    proto = ":fvd_aip_proto",
-    disable_rules = _DAEMON_API_DISABLES,
-)
+# Exported so //app/core:build_script (build.rs, tonic-build) can data-dep the
+# .proto sources. build.rs walks `../../proto` from CARGO_MANIFEST_DIR =
+# app/core, so the imports resolve as `fastverk/v1/<file>.proto`.
+exports_files(glob(["*.proto"]))
