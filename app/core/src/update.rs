@@ -12,7 +12,7 @@ use crate::Result;
 use anyhow::Context;
 
 /// App release repo (owner/name) the updater watches.
-const RELEASE_REPO: &str = "fastverk/fastverk";
+const RELEASE_REPO: &str = "fastverk/fastverk-app";
 
 /// Result of an update check.
 pub struct UpdateInfo {
