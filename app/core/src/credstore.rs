@@ -40,14 +40,17 @@ mod backend {
 
 #[cfg(not(target_os = "macos"))]
 mod backend {
-    use anyhow::{bail, Result};
+    // NB: fully-qualify `anyhow::bail!` — fvkit's crate-level `bail!` macro is
+    // also in scope here and `use anyhow::bail` makes the call ambiguous (E0659).
+    // This module returns `anyhow::Result`, so it needs anyhow's bail.
+    use anyhow::Result;
 
     pub fn get(_service: &str, _account: &str) -> Result<Option<String>> {
         Ok(None)
     }
 
     pub fn set(_service: &str, _account: &str, _secret: &str) -> Result<()> {
-        bail!("OS keychain is not available on this platform yet (P6)")
+        anyhow::bail!("OS keychain is not available on this platform yet (P6)")
     }
 
     pub fn delete(_service: &str, _account: &str) -> Result<()> {
