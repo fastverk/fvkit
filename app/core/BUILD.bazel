@@ -24,6 +24,7 @@ cargo_build_script(
         "//proto/fastverk/v1:fvd.proto",
         "//proto/fastverk/v1:maintenance.proto",
         "//proto/fastverk/v1:repos.proto",
+        "//proto/fastverk/plugin/v1:manifest.proto",
     ],
     edition = "2021",
     tools = ["@protobuf//:protoc"],

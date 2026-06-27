@@ -1,0 +1,20 @@
+"""plugin-echo — a trivial plugin sidecar that proves the plugin spine.
+
+Serves the `Plugin` meta-service (Describe) over the UDS the host passes via
+`$FASTVERK_PLUGIN_SOCKET`. Used by //app/daemon's plugin-host test.
+"""
+
+load("@crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "plugin-echo",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = ["//app/core:fvkit"] + all_crate_deps(
+        package_name = "app/plugin-echo",
+        normal = True,
+    ),
+)

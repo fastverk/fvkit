@@ -1,0 +1,23 @@
+[package]
+name = "plugin-echo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A trivial fastverk plugin sidecar that proves the plugin spine (serves Plugin.Describe)."
+
+[[bin]]
+name = "plugin-echo"
+path = "src/main.rs"
+
+[dependencies]
+# fvkit only for the plugin contract types (fvkit::plugin_proto) + the UDS bind
+# helper; same workspace = same tonic/tokio instance.
+fvkit = { path = "../core" }
+tonic.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

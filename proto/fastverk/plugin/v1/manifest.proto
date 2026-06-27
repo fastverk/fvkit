@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+// The fastverk plugin contract.
+//
+// A plugin implements one or more gRPC services — its "interfaces", in the
+// COM/QueryInterface sense: the fully-qualified, versioned service name
+// (e.g. "fastverk.vpn.v1.Tunnel") is the stable id (the IID), and the
+// add-a-vN-never-mutate rule is COM's immutable-interface discipline.
+//
+// A plugin ships a PluginManifest declaring the services it implements, the
+// meridian UI panels it contributes, and how/when/at-what-privilege it runs.
+// The fvd host reads the manifest to register the plugin and route
+// (service, method) calls to it ("QueryRPC"), and verifies the advertised
+// services at runtime via gRPC ServerReflection. A feature whose service no
+// installed plugin implements is gracefully unavailable (E_NOINTERFACE).
+
+package fastverk.plugin.v1;
+
+// How a plugin's services are served.
+enum Runtime {
+  RUNTIME_UNSPECIFIED = 0;
+  // A separate process the host supervises, serving gRPC over a UDS. Default
+  // for privileged / heavy / non-Rust plugins (VPN, podman).
+  RUNTIME_SIDECAR = 1;
+  // Linked into fvd and served as an in-process tonic service. For pure-logic
+  // Rust plugins that need no special privilege or isolation.
+  RUNTIME_IN_PROCESS = 2;
+}
+
+// When the host starts a sidecar plugin.
+enum Lifecycle {
+  LIFECYCLE_UNSPECIFIED = 0;
+  // Start on first use; may idle-stop (e.g. the VPN until connected).
+  LIFECYCLE_ON_DEMAND = 1;
+  // Start with the host and keep alive (e.g. a status poller).
+  LIFECYCLE_KEEPALIVE = 2;
+}
+
+// Privilege a plugin needs. The HOST decides how to satisfy it (in-session,
+// osascript elevation, or a privileged helper); a plugin never elevates itself.
+enum Privilege {
+  PRIVILEGE_UNSPECIFIED = 0;
+  // Runs as the user, no elevation (e.g. userspace WireGuard).
+  PRIVILEGE_USER = 1;
+  // Needs admin/root for some operations (e.g. full-TUN VPN).
+  PRIVILEGE_ADMIN = 2;
+}
+
+// One gRPC service a plugin implements — the "interface" the host routes to.
+message ServiceRef {
+  // Fully-qualified proto service name, e.g. "fastverk.vpn.v1.Tunnel".
+  string name = 1;
+}
+
+// A UI contribution. The plugin ships a meridian PanelBundle (.binpb) in its
+// resources; the host composes every plugin's bundle into one panel set.
+message PanelContribution {
+  // Path to the plugin's panels.binpb, relative to its resource dir.
+  string bundle_path = 1;
+  // AdhocPanel handler_ids this plugin registers (custom, non-table UI).
+  repeated string adhoc_handler_ids = 2;
+}
+
+// A plugin's declaration to the host. Shipped (textproto or .binpb) in the
+// plugin's registry module; loaded at registration. gRPC reflection on the
+// running plugin verifies the advertised `services`.
+message PluginManifest {
+  // Stable plugin id, e.g. "vpn", "identity", "containers".
+  string id = 1;
+  // Human label.
+  string display_name = 2;
+  // Semver of this plugin build.
+  string version = 3;
+
+  // The gRPC services this plugin implements (its interfaces).
+  repeated ServiceRef services = 4;
+
+  // How + when it runs, and what privilege it needs.
+  Runtime runtime = 5;
+  Lifecycle lifecycle = 6;
+  Privilege privilege = 7;
+
+  // For RUNTIME_SIDECAR: the executable name (resolved next to the host in the
+  // app bundle / on PATH) + args. The sidecar serves gRPC on the UDS the host
+  // passes via $FASTVERK_PLUGIN_SOCKET.
+  string sidecar_binary = 8;
+  repeated string sidecar_args = 9;
+
+  // UI contributions (panels).
+  repeated PanelContribution panels = 10;
+
+  // Optional server-side backend service names the web/ gateway routes to
+  // (same QueryRPC model on the server). Empty = client-only plugin.
+  repeated ServiceRef server_services = 11;
+}
+
+// The QueryRPC "IUnknown": a tiny meta-service every plugin serves so the host
+// can health-check it and confirm it implements what its static manifest
+// claimed — without compiling the plugin's own feature stubs. Discovery of the
+// plugin's feature services themselves is via gRPC ServerReflection.
+service Plugin {
+  // Liveness + manifest echo, called by the host after (re)starting a plugin.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+}
+
+message DescribeRequest {}
+
+message DescribeResponse {
+  PluginManifest manifest = 1;
+  bool healthy = 2;
+}

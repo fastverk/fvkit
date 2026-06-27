@@ -27,6 +27,10 @@ toml.workspace = true
 reqwest.workspace = true
 tower.workspace = true
 hyper-util.workspace = true
+# PKCE (RFC 7636) for the OAuth authorization-code loopback login flow.
+base64.workspace = true
+getrandom.workspace = true
+ring.workspace = true
 
 # The OS keychain backend is macOS-only for now (Linux Secret Service /
 # Windows Credential Manager are P6); on other targets credstore stubs to

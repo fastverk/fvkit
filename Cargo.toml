@@ -15,6 +15,7 @@ resolver = "2"
 members = [
     "app/core",
     "app/daemon",
+    "app/plugin-echo",
 ]
 
 [workspace.package]
@@ -58,6 +59,12 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "rustls-tls",
 ] }
+# PKCE (RFC 7636) for the OAuth authorization-code loopback flow: random
+# verifier/state (getrandom), SHA-256 challenge (ring), base64url (base64).
+# All three are already in the lock (transitive via reqwest/rustls).
+base64 = "0.22"
+getrandom = "0.2"
+ring = "0.17"
 # tonic gRPC client over a Unix socket (fvkit::ipc): the connector needs
 # tower's service_fn + hyper-util's TokioIo (same versions tonic uses).
 tower = { version = "0.5", features = ["util"] }

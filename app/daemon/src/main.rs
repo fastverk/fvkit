@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 
+mod plugins;
 mod sched;
 mod server;
 
@@ -23,5 +24,11 @@ async fn main() -> Result<()> {
     // Background maintenance + update checks alongside the gRPC server.
     tokio::spawn(sched::run());
 
-    server::serve().await
+    // Launch installed plugins + register the services they advertise (none by
+    // default → empty, graceful). The gateway routes feature calls over this and
+    // holds it for the daemon's lifetime, keeping the sidecars up.
+    let plugins = std::sync::Arc::new(plugins::launch_installed().await);
+    tracing::info!(services = ?plugins.services(), "plugin services registered");
+
+    server::serve(plugins).await
 }

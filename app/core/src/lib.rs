@@ -23,6 +23,14 @@ pub mod proto {
         tonic::include_file_descriptor_set!("fastverk_descriptor");
 }
 
+/// Generated bindings for the `fastverk.plugin.v1` plugin contract (the
+/// `PluginManifest` + the `Plugin` meta-service). The fvd host reads manifests
+/// to register + route to plugins ("QueryRPC"); see `proto/fastverk/plugin/v1`.
+pub mod plugin_proto {
+    #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
+    tonic::include_proto!("fastverk.plugin.v1");
+}
+
 mod error;
 pub use error::{Error, Result};
 

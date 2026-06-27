@@ -37,6 +37,13 @@ pub fn bind(path: &Path) -> Result<UnixListenerStream> {
 /// authority is a placeholder (ignored for UDS); the connector dials the
 /// socket path. Mirrors tonic's canonical UDS-client example.
 pub async fn connect(path: &Path) -> Result<FvdClient<Channel>> {
+    Ok(FvdClient::new(connect_channel(path).await?))
+}
+
+/// Connect a tonic [`Channel`] over a Unix-domain socket — the transport behind
+/// [`connect`], and what the daemon's plugin host uses to dial plugin sidecars
+/// (it builds typed clients, e.g. `PluginClient`, on the returned channel).
+pub async fn connect_channel(path: &Path) -> Result<Channel> {
     let path = path.to_path_buf();
     let channel = Endpoint::try_from("http://[::1]:50051")
         .context("endpoint")?
@@ -48,8 +55,8 @@ pub async fn connect(path: &Path) -> Result<FvdClient<Channel>> {
             }
         }))
         .await
-        .with_context(|| "connect to fvd socket")?;
-    Ok(FvdClient::new(channel))
+        .context("connect to socket")?;
+    Ok(channel)
 }
 
 /// Connect to the default `fvd` socket, autostarting `fvd` if it isn't

@@ -8,7 +8,11 @@
 //! return `unimplemented` until P1/P4. State serialization (single
 //! writer) also lands in P1.
 
+use std::sync::Arc;
+
 use anyhow::Result;
+use tonic::codegen::http;
+use tonic::service::{AxumBody, Routes};
 use tonic::{Request, Response, Status};
 
 use fvkit::proto::fvd_server::{Fvd, FvdServer};
@@ -328,15 +332,97 @@ impl Fvd for FvdService {
     }
 }
 
-/// Bind the UDS and serve the `Fvd` service until shutdown.
-pub async fn serve() -> Result<()> {
+/// Build fvd's gRPC gateway: its own core services (`fastverk.v1.Fvd`) route
+/// normally, and every *other* service falls through to the generic plugin
+/// router ([`crate::plugins::route`], QueryRPC). We drop down to tonic's
+/// underlying `axum::Router` only to attach a catch-all `fallback_service`, then
+/// hand it back to tonic to serve.
+fn gateway(plugins: Arc<crate::plugins::Registry>) -> Routes {
+    let proxy = tower::service_fn(move |req: http::Request<AxumBody>| {
+        let plugins = plugins.clone();
+        async move { Ok::<_, std::convert::Infallible>(crate::plugins::route(plugins, req).await) }
+    });
+    let router = Routes::new(FvdServer::new(FvdService::default()))
+        .into_axum_router()
+        .fallback_service(proxy);
+    Routes::from(router)
+}
+
+/// Bind the UDS and serve the gateway (fvd's core services + the plugin router)
+/// until shutdown.
+pub async fn serve(plugins: Arc<crate::plugins::Registry>) -> Result<()> {
     let sock = fvkit::paths::socket_path()?;
     let incoming = fvkit::ipc::bind(&sock)?;
     tracing::info!(socket = %sock.display(), version = version(), "fvd listening");
 
     tonic::transport::Server::builder()
-        .add_service(FvdServer::new(FvdService::default()))
+        .add_routes(gateway(plugins))
         .serve_with_incoming(incoming)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fvkit::plugin_proto::{plugin_client::PluginClient, DescribeRequest};
+    use std::path::Path;
+    use std::time::Duration;
+
+    // Full-stack: stand up fvd's gateway over a temp UDS with the real
+    // plugin-echo sidecar registered, then call `Plugin.Describe` *through the
+    // gateway* with a generated client. Proves the generic router forwards a real
+    // gRPC call to the owning plugin and routes the reply back — the P0 "a call
+    // routes through the gateway" criterion. Skips under `cargo test`
+    // (ECHO_PLUGIN_BIN comes from the Bazel `data` dep).
+    #[tokio::test]
+    async fn routes_a_real_call_through_the_gateway() {
+        let Ok(bin) = std::env::var("ECHO_PLUGIN_BIN") else {
+            eprintln!("ECHO_PLUGIN_BIN unset; skipping (run via `bazel test`)");
+            return;
+        };
+        let tmp = std::env::temp_dir().join(format!("fvd-gw-test-{}", std::process::id()));
+
+        // Launch the echo plugin → a registry that routes its services.
+        let mut reg = crate::plugins::Registry::default();
+        crate::plugins::launch_sidecar(&mut reg, Path::new(&bin), &tmp)
+            .await
+            .expect("launch echo plugin");
+        let reg = Arc::new(reg);
+
+        // Serve the gateway on a temp socket.
+        let gw_sock = tmp.join("gateway.sock");
+        let incoming = fvkit::ipc::bind(&gw_sock).expect("bind gateway socket");
+        let server = tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_routes(gateway(reg.clone()))
+                .serve_with_incoming(incoming),
+        );
+
+        // Dial the gateway and call Plugin.Describe *through* it (the echo plugin
+        // implements `fastverk.plugin.v1.Plugin`, so the fallback routes there).
+        let mut channel = None;
+        for _ in 0..50 {
+            if let Ok(c) = fvkit::ipc::connect_channel(&gw_sock).await {
+                channel = Some(c);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let channel = channel.expect("dial gateway socket");
+        let manifest = PluginClient::new(channel)
+            .describe(DescribeRequest {})
+            .await
+            .expect("Describe through gateway")
+            .into_inner()
+            .manifest
+            .expect("manifest in reply");
+
+        assert_eq!(
+            manifest.id, "echo",
+            "the reply must come from the echo plugin via the router",
+        );
+
+        server.abort();
+    }
 }

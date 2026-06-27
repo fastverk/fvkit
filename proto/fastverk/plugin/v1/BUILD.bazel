@@ -1,0 +1,10 @@
+"""fastverk plugin contract (fastverk.plugin.v1).
+
+The PluginManifest + the Plugin meta-service every plugin serves. Compiled by
+//app/core's build.rs (tonic-build) alongside the fastverk.v1 protos; the
+sources are exported here so that build script can data-dep them. Self-
+contained — no proto_library / codegen rule, mirroring //proto/fastverk/v1."""
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob(["*.proto"]))

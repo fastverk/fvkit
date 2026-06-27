@@ -327,6 +327,20 @@ const GITLAB_CLIENT_ID: &str =
 /// `fv connect gitlab` is one-click for the org). Override with any host.
 const GITLAB_HOST: &str = "gitlab.savvifi.com";
 
+/// fastverk identity (the `fastverk` provider): the shared Cognito user pool —
+/// region + hosted-UI domain label — and the bundled `fastverk-desktop` public
+/// app client (PKCE, no secret, so it ships safely). This is the login other
+/// plugins consume; Cognito has no device endpoint, so it uses the PKCE flow.
+const COGNITO_REGION: &str = "us-east-1";
+const FASTVERK_COGNITO_DOMAIN: &str = "botnoc-msoftware";
+const FASTVERK_DESKTOP_CLIENT_ID: &str = "3c20pofajki4i5cjki97sidhv5";
+/// The authenticated fastverk API/web host the identity token is sent to.
+const FASTVERK_API_HOST: &str = "botnoc.msoftware.co";
+/// The desktop login's pre-registered loopback redirect (Cognito needs an exact
+/// match; `localhost` is its only allowed non-HTTPS callback). 8766/8787 are
+/// also registered as spares.
+const FASTVERK_REDIRECT_URI: &str = "http://localhost:8765/callback";
+
 /// `given` if non-empty, else the bundled `default`.
 fn pick(given: &str, default: &str) -> String {
     if given.is_empty() { default } else { given }.to_string()
@@ -338,6 +352,7 @@ fn default_host(provider: &str) -> &'static str {
         "github" => "github.com",
         "gitlab" => GITLAB_HOST,
         "buildbuddy" => "remote.buildbuddy.io",
+        "fastverk" => FASTVERK_COGNITO_DOMAIN,
         _ => "",
     }
 }
@@ -349,6 +364,8 @@ fn default_client_id(provider: &str, host: &str) -> &'static str {
         GITHUB_CLIENT_ID
     } else if provider == "gitlab" && host == GITLAB_HOST {
         GITLAB_CLIENT_ID
+    } else if provider == "fastverk" && host == FASTVERK_COGNITO_DOMAIN {
+        FASTVERK_DESKTOP_CLIENT_ID
     } else {
         ""
     }
@@ -434,7 +451,35 @@ pub fn preset(provider: &str, host: &str, client_id: &str) -> Result<Connection>
             c.header = "x-buildbuddy-api-key".to_string();
             c.auth_kind = AuthKind::ApiKey as i32;
         }
-        other => bail!("unknown provider preset: {other} (use github|gitlab|buildbuddy)"),
+        "fastverk" => {
+            // fastverk identity: Cognito hosted-UI OIDC against the shared user
+            // pool. Authorization-code + PKCE (no device endpoint → empty
+            // device_auth_url forces the PKCE flow). The bearer token is the
+            // identity other plugins consume. `host` is the hosted-UI domain
+            // label (defaulted above to the bundled pool's domain).
+            let domain = host;
+            c.display_name = "fastverk".to_string();
+            c.provider = "fastverk".to_string();
+            c.host_patterns = vec![FASTVERK_API_HOST.to_string()];
+            c.header = "Authorization".to_string();
+            c.value_prefix = "Bearer ".to_string();
+            c.auth_kind = AuthKind::Oauth as i32;
+            c.oauth = Some(OAuthConfig {
+                client_id: pick(client_id, default_client_id("fastverk", domain)),
+                auth_url: format!(
+                    "https://{domain}.auth.{COGNITO_REGION}.amazoncognito.com/oauth2/authorize"
+                ),
+                token_url: format!(
+                    "https://{domain}.auth.{COGNITO_REGION}.amazoncognito.com/oauth2/token"
+                ),
+                scopes: vec!["openid".to_string(), "email".to_string(), "profile".to_string()],
+                redirect_uri: FASTVERK_REDIRECT_URI.to_string(),
+                ..Default::default()
+            });
+        }
+        other => {
+            bail!("unknown provider preset: {other} (use github|gitlab|buildbuddy|fastverk)")
+        }
     }
     // Where this connection's secret lives, in precedence order: the
     // keychain locally, then the canonical env var (+ provider/host alias
@@ -533,8 +578,33 @@ pub fn connect(params: &ConnectParams, prompt: impl FnOnce(&str, &str)) -> Resul
         AuthKind::Unspecified => bail!("connection has no auth kind"),
     };
 
+    persist(conn, &secret)
+}
+
+/// Establish a connection via the OAuth2 authorization-code + PKCE flow — for
+/// OAuth providers without a device endpoint (e.g. `fastverk`/Cognito).
+/// `open(authorize_url)` opens the system browser; this binds the loopback
+/// redirect, waits for the callback, exchanges the code, stores the token, and
+/// upserts the registry. Returns the persisted connection (no secret in it).
+pub fn connect_pkce(params: &ConnectParams, open: impl FnOnce(&str)) -> Result<Connection> {
+    let conn = preset(&params.provider, &params.host, &params.client_id)?;
+    if conn.auth_kind() != AuthKind::Oauth {
+        bail!("provider {} is not an OAuth provider", params.provider);
+    }
+    let oauth_cfg = conn
+        .oauth
+        .as_ref()
+        .context("OAuth preset is missing its config")?;
+    let secret = oauth::pkce_flow(oauth_cfg, open)?.secret;
+    persist(conn, &secret)
+}
+
+/// Stamp `connected_at`, store the secret out-of-band (keychain/env), and upsert
+/// the connection into the registry (which never carries the secret). Shared by
+/// the device-code and PKCE connect paths.
+fn persist(mut conn: Connection, secret: &str) -> Result<Connection> {
     conn.connected_at = chrono::Utc::now().to_rfc3339();
-    secretstore::Resolver::standard().store(&conn.secret_refs, &secret)?;
+    secretstore::Resolver::standard().store(&conn.secret_refs, secret)?;
 
     let mut reg = load()?;
     reg.connections.retain(|c| c.id != conn.id);
@@ -616,6 +686,41 @@ mod tests {
         assert_eq!(keychain_of(&bb), ("fastverk.buildbuddy", "api-key"));
 
         assert!(preset("nope", "", "").is_err());
+    }
+
+    #[test]
+    fn fastverk_preset_is_cognito_pkce() {
+        let fv = preset("fastverk", "", "").unwrap();
+        assert_eq!(fv.id, "fastverk");
+        assert_eq!(fv.auth_kind(), AuthKind::Oauth);
+        assert_eq!(fv.header, "Authorization");
+        assert_eq!(fv.value_prefix, "Bearer ");
+        assert_eq!(keychain_of(&fv), ("fastverk.fastverk", "oauth"));
+
+        let o = fv.oauth.as_ref().unwrap();
+        // Bundled public desktop client; Cognito hosted-UI endpoints.
+        assert_eq!(o.client_id, "3c20pofajki4i5cjki97sidhv5");
+        assert!(o.client_secret.is_empty(), "public client carries no secret");
+        assert_eq!(
+            o.auth_url,
+            "https://botnoc-msoftware.auth.us-east-1.amazoncognito.com/oauth2/authorize"
+        );
+        assert_eq!(
+            o.token_url,
+            "https://botnoc-msoftware.auth.us-east-1.amazoncognito.com/oauth2/token"
+        );
+        // No device endpoint → forces the PKCE flow; loopback redirect must match
+        // the pre-registered callback.
+        assert!(o.device_auth_url.is_empty(), "Cognito has no device endpoint");
+        assert_eq!(o.redirect_uri, "http://localhost:8765/callback");
+        assert_eq!(o.scopes, ["openid", "email", "profile"]);
+
+        // An explicit client_id / hosted-UI domain override the bundled defaults.
+        let custom = preset("fastverk", "acme-pool", "my-client").unwrap();
+        assert_eq!(custom.id, "acme-pool");
+        let co = custom.oauth.as_ref().unwrap();
+        assert_eq!(co.client_id, "my-client");
+        assert!(co.auth_url.contains("acme-pool.auth.us-east-1.amazoncognito.com"));
     }
 
     /// Canonical env naming + the alias table + the default registry. This
