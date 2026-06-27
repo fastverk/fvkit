@@ -113,8 +113,13 @@ fn grpc_status(code: Code, message: &str) -> http::Response<AxumBody> {
 
 /// Spawn a sidecar plugin, wait for it, call `Plugin.Describe` (liveness + the
 /// manifest it claims), and register the services it advertises. Returns the
-/// plugin id. The sidecar serves gRPC on the UDS passed via
-/// `$FASTVERK_PLUGIN_SOCKET`.
+/// plugin id.
+///
+/// The sidecar serves gRPC on the UDS passed via `$FASTVERK_PLUGIN_SOCKET`, and
+/// is told fvd's own socket via `$FASTVERK_FVD_SOCKET` — the **back-channel** a
+/// self-contained plugin dials to reach host services (e.g.
+/// `identity.v1.Auth.Token` for the login bearer), since a plugin can't
+/// otherwise know where fvd listens.
 pub async fn launch_sidecar(reg: &mut Registry, binary: &Path, runtime_dir: &Path) -> Result<String> {
     std::fs::create_dir_all(runtime_dir)
         .with_context(|| format!("create plugin runtime dir {}", runtime_dir.display()))?;
@@ -122,8 +127,12 @@ pub async fn launch_sidecar(reg: &mut Registry, binary: &Path, runtime_dir: &Pat
     let socket = runtime_dir.join(format!("{stem}.sock"));
     let _ = std::fs::remove_file(&socket);
 
+    let fvd_socket = fvkit::paths::socket_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let child = tokio::process::Command::new(binary)
         .env("FASTVERK_PLUGIN_SOCKET", &socket)
+        .env("FASTVERK_FVD_SOCKET", &fvd_socket)
         .stdin(Stdio::null())
         .spawn()
         .with_context(|| format!("spawn plugin {}", binary.display()))?;
