@@ -463,7 +463,8 @@ mod tests {
         }
         let channel = channel.expect("dial gateway socket");
 
-        let identity = AuthClient::new(channel)
+        let mut client = AuthClient::new(channel);
+        let identity = client
             .who_am_i(WhoAmIRequest {})
             .await
             .expect("WhoAmI through gateway")
@@ -471,6 +472,16 @@ mod tests {
         // Routing is the assertion; the authenticated flag depends on keychain
         // state, so we only require a well-formed response.
         let _ = identity.authenticated;
+
+        // The Token RPC routes too (the bearer plugins consume). When the token
+        // is present its type is "Bearer"; absent → both empty. Either is a
+        // well-formed, routed response (the assertion).
+        let token = client
+            .token(fvkit::identity_proto::TokenRequest {})
+            .await
+            .expect("Token through gateway")
+            .into_inner();
+        assert_eq!(token.access_token.is_empty(), token.token_type.is_empty());
 
         server.abort();
     }

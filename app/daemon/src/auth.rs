@@ -10,7 +10,8 @@ use tonic::{Request, Response, Status};
 
 use fvkit::identity_proto::auth_server::Auth;
 use fvkit::identity_proto::{
-    Identity, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, WhoAmIRequest,
+    Identity, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, TokenRequest,
+    TokenResponse, WhoAmIRequest,
 };
 
 #[derive(Default)]
@@ -51,6 +52,20 @@ impl Auth for AuthService {
     ) -> Result<Response<Identity>, Status> {
         let identity = fvkit::identity::whoami().map_err(internal)?;
         Ok(Response::new(identity))
+    }
+
+    async fn token(
+        &self,
+        _request: Request<TokenRequest>,
+    ) -> Result<Response<TokenResponse>, Status> {
+        let access_token = fvkit::identity::access_token()
+            .map_err(internal)?
+            .unwrap_or_default();
+        let token_type = if access_token.is_empty() { String::new() } else { "Bearer".to_string() };
+        Ok(Response::new(TokenResponse {
+            access_token,
+            token_type,
+        }))
     }
 }
 

@@ -19,6 +19,12 @@ service Auth {
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   // The current signed-in identity (authenticated = false when not logged in).
   rpc WhoAmI(WhoAmIRequest) returns (Identity);
+
+  // The current access token — the bearer other plugins present to fastverk
+  // services (e.g. the VPN plugin to the WireGuard provisioner). Empty when not
+  // signed in. This is how a plugin consumes the login without touching the
+  // keychain itself (fvd stays the single owner of credentials).
+  rpc Token(TokenRequest) returns (TokenResponse);
 }
 
 message LoginRequest {}
@@ -33,6 +39,14 @@ message LogoutResponse {
 }
 
 message WhoAmIRequest {}
+
+message TokenRequest {}
+message TokenResponse {
+  // The access token (a Cognito JWT, token_use=access), or empty if not signed in.
+  string access_token = 1;
+  // Token type for the Authorization header, e.g. "Bearer".
+  string token_type = 2;
+}
 
 // The signed-in account, decoded from the OIDC id_token.
 message Identity {

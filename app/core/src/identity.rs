@@ -74,6 +74,16 @@ pub fn whoami() -> Result<Identity> {
     }
 }
 
+/// The current access token — the `fastverk` connection's stored bearer secret
+/// (a Cognito access JWT). `None` when not signed in. This is what other plugins
+/// present to fastverk services (the VPN plugin → the WireGuard provisioner);
+/// fvd hands it out via `identity.v1.Auth.Token` so plugins never touch the
+/// keychain themselves.
+pub fn access_token() -> Result<Option<String>> {
+    let conn = connections::preset(FASTVERK_ID, "", "")?;
+    Ok(secretstore::Resolver::standard().resolve(&conn.secret_refs))
+}
+
 /// Forget the stored identity: delete the id_token and disconnect the
 /// `fastverk` connection (which also clears its access token). Returns whether a
 /// connection was present.
