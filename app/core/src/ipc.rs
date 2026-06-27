@@ -62,18 +62,25 @@ pub async fn connect_channel(path: &Path) -> Result<Channel> {
 /// Connect to the default `fvd` socket, autostarting `fvd` if it isn't
 /// running yet (waiting up to ~5s for the socket to come up).
 pub async fn connect_default() -> Result<FvdClient<Channel>> {
+    Ok(FvdClient::new(connect_channel_default().await?))
+}
+
+/// Like [`connect_default`] but returns the raw [`Channel`], so callers can
+/// build *any* service client on the (single, autostarted) fvd connection —
+/// e.g. the `fastverk.identity.v1.Auth` client the tray uses alongside `Fvd`.
+pub async fn connect_channel_default() -> Result<Channel> {
     let sock = crate::paths::socket_path()?;
-    if let Ok(client) = connect(&sock).await {
-        return Ok(client);
+    if let Ok(ch) = connect_channel(&sock).await {
+        return Ok(ch);
     }
     spawn_fvd()?;
     for _ in 0..50 {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        if let Ok(client) = connect(&sock).await {
-            return Ok(client);
+        if let Ok(ch) = connect_channel(&sock).await {
+            return Ok(ch);
         }
     }
-    Ok(connect(&sock)
+    Ok(connect_channel(&sock)
         .await
         .context("fvd did not come up on its socket")?)
 }
