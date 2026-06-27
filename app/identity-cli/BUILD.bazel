@@ -1,0 +1,18 @@
+"""fv-id — fastverk identity smoke tool (login/whoami/logout against fvkit)."""
+
+load("@crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fv-id",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = ["//app/core:fvkit"] + all_crate_deps(
+        package_name = "app/identity-cli",
+        normal = True,
+    ),
+)
+
+exports_files(["Cargo.toml"])

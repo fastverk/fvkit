@@ -285,6 +285,8 @@ impl Fvd for FvdService {
             .await
             .ok()
             .and_then(Result::ok);
+        // Identity from the stored id_token (offline keychain read, no network).
+        let identity = fvkit::identity::whoami().unwrap_or_default();
         Ok(Response::new(StatusResponse {
             version: version().to_string(),
             volumes,
@@ -292,6 +294,8 @@ impl Fvd for FvdService {
             last_maintenance: None,
             update_available: update.as_ref().is_some_and(|u| u.available),
             latest_version: update.map(|u| u.latest).unwrap_or_default(),
+            signed_in: identity.authenticated,
+            account_email: identity.email,
         }))
     }
 

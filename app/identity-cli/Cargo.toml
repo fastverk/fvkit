@@ -1,0 +1,16 @@
+[package]
+name = "fv-id"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fastverk identity smoke tool: exercise the Cognito login/whoami/logout flow directly against fvkit::identity (no daemon)."
+
+[[bin]]
+name = "fv-id"
+path = "src/main.rs"
+
+[dependencies]
+fvkit = { path = "../core" }
+anyhow.workspace = true

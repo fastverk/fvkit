@@ -31,6 +31,8 @@ hyper-util.workspace = true
 base64.workspace = true
 getrandom.workspace = true
 ring.workspace = true
+# Verify the OIDC id_token signature (RS256) against the IdP's JWKS.
+jsonwebtoken.workspace = true
 
 # The OS keychain backend is macOS-only for now (Linux Secret Service /
 # Windows Credential Manager are P6); on other targets credstore stubs to

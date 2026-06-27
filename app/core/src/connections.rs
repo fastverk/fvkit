@@ -333,6 +333,7 @@ const GITLAB_HOST: &str = "gitlab.savvifi.com";
 /// plugins consume; Cognito has no device endpoint, so it uses the PKCE flow.
 const COGNITO_REGION: &str = "us-east-1";
 const FASTVERK_COGNITO_DOMAIN: &str = "botnoc-msoftware";
+const FASTVERK_USER_POOL_ID: &str = "us-east-1_BOqCrVeLo";
 const FASTVERK_DESKTOP_CLIENT_ID: &str = "3c20pofajki4i5cjki97sidhv5";
 /// The authenticated fastverk API/web host the identity token is sent to.
 const FASTVERK_API_HOST: &str = "botnoc.msoftware.co";
@@ -474,6 +475,11 @@ pub fn preset(provider: &str, host: &str, client_id: &str) -> Result<Connection>
                 ),
                 scopes: vec!["openid".to_string(), "email".to_string(), "profile".to_string()],
                 redirect_uri: FASTVERK_REDIRECT_URI.to_string(),
+                // OIDC issuer for id_token signature verification (the Cognito
+                // pool, region-qualified — not the hosted-UI domain).
+                issuer: format!(
+                    "https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{FASTVERK_USER_POOL_ID}"
+                ),
                 ..Default::default()
             });
         }
@@ -714,6 +720,10 @@ mod tests {
         assert!(o.device_auth_url.is_empty(), "Cognito has no device endpoint");
         assert_eq!(o.redirect_uri, "http://localhost:8765/callback");
         assert_eq!(o.scopes, ["openid", "email", "profile"]);
+        assert_eq!(
+            o.issuer,
+            "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_BOqCrVeLo"
+        );
 
         // An explicit client_id / hosted-UI domain override the bundled defaults.
         let custom = preset("fastverk", "acme-pool", "my-client").unwrap();

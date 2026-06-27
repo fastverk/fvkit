@@ -36,6 +36,8 @@ pub fn login(open: impl FnOnce(&str)) -> Result<Identity> {
         .oauth
         .as_ref()
         .context("fastverk preset is missing its OAuth config")?;
+    let issuer = oauth_cfg.issuer.clone();
+    let audience = oauth_cfg.client_id.clone();
     let token = oauth::pkce_flow(oauth_cfg, open)?;
 
     // The access token is the connection's bearer secret (API credential).
@@ -45,16 +47,29 @@ pub fn login(open: impl FnOnce(&str)) -> Result<Identity> {
     let id_token = token
         .id_token
         .context("Cognito returned no id_token (the `openid` scope is required)")?;
+    // Establish trust at login: verify the RS256 signature + iss/aud/exp against
+    // the IdP's JWKS (the network is up — we just exchanged the code). whoami
+    // later trusts the stored, already-verified token (offline). A preset with
+    // no issuer falls back to decode-only (trusting the direct TLS exchange).
+    let claims = if issuer.is_empty() {
+        decode_claims(&id_token)?
+    } else {
+        verify_id_token(&id_token, &issuer, &audience)?
+    };
     secretstore::Resolver::standard().store(&[id_token_ref()], &id_token)?;
 
-    Ok(identity_from_id_token(&id_token))
+    Ok(identity_from_claims(&claims))
 }
 
 /// The current signed-in identity, decoded from the stored id_token, or an
 /// unauthenticated `Identity` when not logged in.
 pub fn whoami() -> Result<Identity> {
     match secretstore::Resolver::standard().resolve(&[id_token_ref()]) {
-        Some(id_token) => Ok(identity_from_id_token(&id_token)),
+        // Offline: the stored token was signature-verified at login; read its
+        // claims. An undecodable token still proves a login happened.
+        Some(id_token) => Ok(identity_from_claims(
+            &decode_claims(&id_token).unwrap_or_default(),
+        )),
         None => Ok(Identity::default()),
     }
 }
@@ -74,21 +89,48 @@ fn id_token_ref() -> SecretRef {
     secretstore::keychain_ref(format!("fastverk.{FASTVERK_ID}"), "id_token")
 }
 
-/// Build an `Identity` from an id_token, falling back to a minimal authenticated
-/// identity if the claims can't be decoded (the token still proves login).
-fn identity_from_id_token(id_token: &str) -> Identity {
-    let claims = decode_claims(id_token).unwrap_or_default();
+/// Build an `Identity` from decoded id_token claims. `authenticated` is true
+/// whenever we hold a token (even one whose optional claims are absent).
+fn identity_from_claims(claims: &Claims) -> Identity {
     Identity {
         authenticated: true,
-        subject: claims.sub,
-        email: claims.email,
-        name: claims.name,
+        subject: claims.sub.clone(),
+        email: claims.email.clone(),
+        name: claims.name.clone(),
         expires_at: claims
             .exp
             .and_then(|e| chrono::DateTime::from_timestamp(e, 0))
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_default(),
     }
+}
+
+/// Verify an OIDC id_token: RS256 signature against the issuer's JWKS, plus the
+/// iss / aud / exp claims. Returns the verified claims. Fetches the JWKS over
+/// the network (`{issuer}/.well-known/jwks.json`).
+fn verify_id_token(id_token: &str, issuer: &str, audience: &str) -> Result<Claims> {
+    use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
+
+    let kid = decode_header(id_token)
+        .context("read id_token header")?
+        .kid
+        .context("id_token has no `kid`")?;
+    let jwks_url = format!("{}/.well-known/jwks.json", issuer.trim_end_matches('/'));
+    let jwks: JwkSet = reqwest::blocking::get(&jwks_url)
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .context("fetch JWKS")?
+        .json()
+        .context("parse JWKS")?;
+    let jwk = jwks
+        .find(&kid)
+        .context("id_token signing key not in JWKS (key rotated?)")?;
+    let key = DecodingKey::from_jwk(jwk).context("build decoding key from JWK")?;
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_issuer(&[issuer]);
+    validation.set_audience(&[audience]);
+    Ok(decode::<Claims>(id_token, &key, &validation)
+        .context("verify id_token signature/claims")?
+        .claims)
 }
 
 /// The subset of OIDC id_token claims we surface.
@@ -138,7 +180,7 @@ mod tests {
             "name": "Marsh",
             "exp": 1_700_000_000_i64,
         }));
-        let id = identity_from_id_token(&jwt);
+        let id = identity_from_claims(&decode_claims(&jwt).unwrap());
         assert!(id.authenticated);
         assert_eq!(id.subject, "abc-123");
         assert_eq!(id.email, "marsh@example.com");
@@ -151,7 +193,7 @@ mod tests {
     fn identity_survives_missing_claims() {
         // Only `sub` — email/name absent, exp absent: still authenticated.
         let jwt = unsigned_jwt(json!({ "sub": "only-sub" }));
-        let id = identity_from_id_token(&jwt);
+        let id = identity_from_claims(&decode_claims(&jwt).unwrap());
         assert!(id.authenticated);
         assert_eq!(id.subject, "only-sub");
         assert!(id.email.is_empty());
@@ -159,9 +201,10 @@ mod tests {
     }
 
     #[test]
-    fn garbage_token_still_reads_as_authenticated() {
-        // A token we can't decode still proves a login happened.
-        let id = identity_from_id_token("not-a-jwt");
+    fn holding_a_token_reads_as_authenticated() {
+        // whoami builds identity even from empty claims (an undecodable but
+        // present token still proves a login happened).
+        let id = identity_from_claims(&Claims::default());
         assert!(id.authenticated);
         assert!(id.subject.is_empty());
     }
@@ -169,5 +212,11 @@ mod tests {
     #[test]
     fn decode_claims_rejects_non_jwt() {
         assert!(decode_claims("nodots").is_err());
+    }
+
+    #[test]
+    fn verify_id_token_rejects_malformed_token() {
+        // Fails at header parse — before any network — so it's hermetic.
+        assert!(verify_id_token("not-a-jwt", "https://issuer.example", "aud").is_err());
     }
 }

@@ -16,6 +16,7 @@ members = [
     "app/core",
     "app/daemon",
     "app/plugin-echo",
+    "app/identity-cli",
 ]
 
 [workspace.package]
@@ -65,6 +66,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 base64 = "0.22"
 getrandom = "0.2"
 ring = "0.17"
+# OIDC id_token signature verification (RS256 against the Cognito JWKS).
+jsonwebtoken = "9.3"
 # tonic gRPC client over a Unix socket (fvkit::ipc): the connector needs
 # tower's service_fn + hyper-util's TokioIo (same versions tonic uses).
 tower = { version = "0.5", features = ["util"] }

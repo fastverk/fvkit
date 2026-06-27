@@ -291,6 +291,10 @@ message StatusResponse {
   bool update_available = 5;
   // Latest available version (when known).
   string latest_version = 6;
+  // Whether a fastverk identity is signed in (via `fastverk.identity.v1.Auth`),
+  // and its account email when known.
+  bool signed_in = 7;
+  string account_email = 8;
 }
 
 // Request to check for updates.
