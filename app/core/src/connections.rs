@@ -560,7 +560,7 @@ pub struct ConnectParams {
 /// `prompt(user_code, verification_uri)` is shown during OAuth. Returns
 /// the persisted connection (which never carries the secret).
 pub fn connect(params: &ConnectParams, prompt: impl FnOnce(&str, &str)) -> Result<Connection> {
-    let mut conn = preset(&params.provider, &params.host, &params.client_id)?;
+    let conn = preset(&params.provider, &params.host, &params.client_id)?;
     let secret = match conn.auth_kind() {
         AuthKind::Oauth => {
             let oauth_cfg = conn
@@ -601,8 +601,8 @@ pub fn connect_pkce(params: &ConnectParams, open: impl FnOnce(&str)) -> Result<C
 
 /// Stamp `connected_at`, store the secret out-of-band (keychain/env), and upsert
 /// the connection into the registry (which never carries the secret). Shared by
-/// the device-code and PKCE connect paths.
-fn persist(mut conn: Connection, secret: &str) -> Result<Connection> {
+/// the device-code and PKCE connect paths, and by [`crate::identity`].
+pub(crate) fn persist(mut conn: Connection, secret: &str) -> Result<Connection> {
     conn.connected_at = chrono::Utc::now().to_rfc3339();
     secretstore::Resolver::standard().store(&conn.secret_refs, secret)?;
 

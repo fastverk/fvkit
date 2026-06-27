@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+// fastverk identity — the Login/Account plugin's contract.
+//
+// `Auth` is the keystone plugin interface (the QueryRPC service
+// `fastverk.identity.v1.Auth`): the bearer token it mints via the Cognito
+// hosted-UI authorization-code + PKCE flow is the identity every other plugin
+// consumes. fvd implements it in-process and routes it through the gateway like
+// any plugin — dogfooding the plugin contract.
+
+package fastverk.identity.v1;
+
+// The fastverk identity surface.
+service Auth {
+  // Run the interactive browser login (Cognito hosted UI + PKCE) and persist the
+  // token. Blocks until the user authorizes (or the flow is abandoned).
+  rpc Login(LoginRequest) returns (LoginResponse);
+  // Forget the stored identity + tokens.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  // The current signed-in identity (authenticated = false when not logged in).
+  rpc WhoAmI(WhoAmIRequest) returns (Identity);
+}
+
+message LoginRequest {}
+message LoginResponse {
+  Identity identity = 1;
+}
+
+message LogoutRequest {}
+message LogoutResponse {
+  // True if a stored identity was present and removed.
+  bool removed = 1;
+}
+
+message WhoAmIRequest {}
+
+// The signed-in account, decoded from the OIDC id_token.
+message Identity {
+  bool authenticated = 1;
+  // OIDC `sub` — the stable user id.
+  string subject = 2;
+  string email = 3;
+  // Display name, if the IdP provides one.
+  string name = 4;
+  // RFC 3339 token expiry, if known.
+  string expires_at = 5;
+}

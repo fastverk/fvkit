@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "../../proto/fastverk/v1/maintenance.proto",
                 "../../proto/fastverk/v1/repos.proto",
                 "../../proto/fastverk/plugin/v1/manifest.proto",
+                "../../proto/fastverk/identity/v1/auth.proto",
             ],
             &["../../proto"],
         )?;

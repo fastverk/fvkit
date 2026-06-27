@@ -31,6 +31,13 @@ pub mod plugin_proto {
     tonic::include_proto!("fastverk.plugin.v1");
 }
 
+/// Generated bindings for the `fastverk.identity.v1` Login/Account contract (the
+/// `Auth` service). fvd implements it in-process; see [`crate::identity`].
+pub mod identity_proto {
+    #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
+    tonic::include_proto!("fastverk.identity.v1");
+}
+
 mod error;
 pub use error::{Error, Result};
 
@@ -64,6 +71,7 @@ pub mod bazelrc;
 pub mod config;
 pub mod connections;
 pub mod credstore;
+pub mod identity;
 pub mod ipc;
 pub mod maintain;
 pub mod notify;

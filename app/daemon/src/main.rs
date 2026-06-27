@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 
+mod auth;
 mod plugins;
 mod sched;
 mod server;

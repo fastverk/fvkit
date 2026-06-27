@@ -14,11 +14,14 @@ use serde::Deserialize;
 
 use crate::proto::OAuthConfig;
 
-/// An access token plus its optional RFC 3339 expiry.
+/// An access token plus its optional RFC 3339 expiry. For OIDC flows the
+/// `id_token` (a JWT carrying the user's identity claims) rides along.
 pub struct Token {
     pub secret: String,
     pub refresh_token: Option<String>,
     pub expires_at: Option<String>,
+    /// OIDC id_token (present when `openid` scope was granted).
+    pub id_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +41,7 @@ const fn default_interval() -> u64 {
 struct TokenResp {
     access_token: Option<String>,
     refresh_token: Option<String>,
+    id_token: Option<String>,
     expires_in: Option<i64>,
     error: Option<String>,
 }
@@ -98,6 +102,7 @@ pub fn device_flow(oauth: &OAuthConfig, prompt: impl FnOnce(&str, &str)) -> Resu
                 secret,
                 refresh_token: resp.refresh_token,
                 expires_at: expiry(resp.expires_in),
+                id_token: resp.id_token,
             });
         }
         match resp.error.as_deref() {
@@ -131,6 +136,7 @@ pub fn refresh(oauth: &OAuthConfig, refresh_token: &str) -> Result<Token> {
             secret,
             refresh_token: resp.refresh_token,
             expires_at: expiry(resp.expires_in),
+            id_token: resp.id_token,
         }),
         None => bail!(
             "refresh failed: {}",
@@ -328,6 +334,7 @@ fn exchange_code(
             secret,
             refresh_token: resp.refresh_token,
             expires_at: expiry(resp.expires_in),
+            id_token: resp.id_token,
         }),
         None => bail!(
             "token exchange failed: {}",

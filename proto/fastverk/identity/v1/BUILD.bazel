@@ -1,0 +1,5 @@
+"""fastverk.identity.v1 — the Login/Account plugin contract (Auth service)."""
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob(["*.proto"]))

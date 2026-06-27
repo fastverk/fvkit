@@ -15,6 +15,7 @@ use tonic::codegen::http;
 use tonic::service::{AxumBody, Routes};
 use tonic::{Request, Response, Status};
 
+use fvkit::identity_proto::auth_server::AuthServer;
 use fvkit::proto::fvd_server::{Fvd, FvdServer};
 use fvkit::proto::{
     ApplyUpdateRequest, ApplyUpdateResponse, BazelrcApplyRequest, BazelrcApplyResponse,
@@ -342,7 +343,10 @@ fn gateway(plugins: Arc<crate::plugins::Registry>) -> Routes {
         let plugins = plugins.clone();
         async move { Ok::<_, std::convert::Infallible>(crate::plugins::route(plugins, req).await) }
     });
+    // fvd's core services (Fvd + the in-process identity Auth — dogfooding the
+    // plugin contract) route normally; everything else hits the plugin router.
     let router = Routes::new(FvdServer::new(FvdService::default()))
+        .add_service(AuthServer::new(crate::auth::AuthService))
         .into_axum_router()
         .fallback_service(proxy);
     Routes::from(router)
@@ -422,6 +426,47 @@ mod tests {
             manifest.id, "echo",
             "the reply must come from the echo plugin via the router",
         );
+
+        server.abort();
+    }
+
+    // fvd's in-process identity Auth is registered as a core gateway service
+    // (dogfooding the plugin contract): WhoAmI must route + return. Needs no
+    // sidecar and no login (unauthenticated in a fresh environment); the
+    // assertion is that the call reaches the service and comes back.
+    #[tokio::test]
+    async fn whoami_routes_through_the_gateway() {
+        use fvkit::identity_proto::auth_client::AuthClient;
+        use fvkit::identity_proto::WhoAmIRequest;
+
+        let tmp = std::env::temp_dir().join(format!("fvd-auth-test-{}", std::process::id()));
+        let reg = Arc::new(crate::plugins::Registry::default());
+        let gw_sock = tmp.join("gateway.sock");
+        let incoming = fvkit::ipc::bind(&gw_sock).expect("bind gateway socket");
+        let server = tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_routes(gateway(reg))
+                .serve_with_incoming(incoming),
+        );
+
+        let mut channel = None;
+        for _ in 0..50 {
+            if let Ok(c) = fvkit::ipc::connect_channel(&gw_sock).await {
+                channel = Some(c);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let channel = channel.expect("dial gateway socket");
+
+        let identity = AuthClient::new(channel)
+            .who_am_i(WhoAmIRequest {})
+            .await
+            .expect("WhoAmI through gateway")
+            .into_inner();
+        // Routing is the assertion; the authenticated flag depends on keychain
+        // state, so we only require a well-formed response.
+        let _ = identity.authenticated;
 
         server.abort();
     }
