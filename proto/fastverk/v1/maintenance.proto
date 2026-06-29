@@ -102,3 +102,59 @@ message MaintenanceReport {
   // Per-task outcomes.
   repeated MaintenanceTask tasks = 4;
 }
+
+// ── Maintenance as an interface ──────────────────────────────────────────────
+//
+// Maintenance is descriptor-driven, not hardcoded: the set of tasks is DATA
+// (MaintenanceTaskSpec), and a task PROVIDER implements the Maintenance service
+// to run them. fvd provides the built-in tasks in-process; out-of-tree tasks
+// ship as plugins implementing this same service, discovered via the plugin
+// manifest — the same QueryRPC model as every other fastverk capability. The
+// MaintainNow RPC on the Fvd service is the "run all" aggregate over this set.
+
+// Declarative cadence read by fvd's scheduler.
+message Schedule {
+  // Run at most once per this many seconds; 0 = on-demand only.
+  uint32 interval_seconds = 1;
+}
+
+// The descriptor for a maintenance task — what it is, how often it should run,
+// and what it touches. A renderer (meridian), the scheduler, and the CLI all
+// read specs rather than knowing tasks by hand.
+message MaintenanceTaskSpec {
+  // Stable id, e.g. "output-base-gc". Matches MaintenanceTask.name.
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  // Cadence for unattended runs.
+  Schedule schedule = 4;
+  // Whether the task runs in an unfiltered (`only`-empty) maintenance run.
+  bool default_enabled = 5;
+  // What it operates on, e.g. "bazel-output" | "disk-cache" | "repos".
+  string scope = 6;
+  // True when the task only ever reclaims regenerable state (safe to run
+  // unattended). Informational for UIs / confirmation prompts.
+  bool reversible = 7;
+}
+
+message ListMaintenanceTasksRequest {}
+message ListMaintenanceTasksResponse {
+  repeated MaintenanceTaskSpec specs = 1;
+}
+
+message RunMaintenanceTaskRequest {
+  // Task id to run (must match a spec).
+  string id = 1;
+  // Preview only — report what would happen, change nothing.
+  bool validate_only = 2;
+}
+
+// The maintenance interface. fvd implements it in-process for the built-in
+// tasks; a maintenance plugin implements the same service to contribute its
+// own, routed by QueryRPC. "Run all" stays on Fvd.MaintainNow.
+service Maintenance {
+  // Discover the available tasks (their specs).
+  rpc ListTasks(ListMaintenanceTasksRequest) returns (ListMaintenanceTasksResponse);
+  // Run a single task by id; returns its outcome.
+  rpc RunTask(RunMaintenanceTaskRequest) returns (MaintenanceTask);
+}

@@ -17,12 +17,14 @@ use tonic::{Request, Response, Status};
 
 use fvkit::identity_proto::auth_server::AuthServer;
 use fvkit::proto::fvd_server::{Fvd, FvdServer};
+use fvkit::proto::maintenance_server::{Maintenance, MaintenanceServer};
 use fvkit::proto::{
     ApplyUpdateRequest, ApplyUpdateResponse, BazelrcApplyRequest, BazelrcApplyResponse,
     BazelrcPreviewRequest, BazelrcPreviewResponse, CheckUpdateRequest, CheckUpdateResponse,
     ConnectProviderRequest, ConnectProviderResponse, DisconnectRequest, DisconnectResponse,
     GetCredentialsRequest, GetCredentialsResponse, GetStatusRequest, ListConnectionsRequest,
-    ListConnectionsResponse, MaintainNowRequest, MaintenanceReport, RepoSyncReport,
+    ListConnectionsResponse, ListMaintenanceTasksRequest, ListMaintenanceTasksResponse,
+    MaintainNowRequest, MaintenanceReport, MaintenanceTask, RunMaintenanceTaskRequest, RepoSyncReport,
     ReposStatusRequest, ReposStatusResponse, ReposSyncRequest, StatusResponse, VolumeAuditRequest,
     VolumeAuditResponse, VolumeCreateRequest, VolumeCreateResponse, VolumeStatusRequest,
     VolumeStatusResponse, Worktree, WorktreeAddRequest, WorktreeListRequest, WorktreeListResponse,
@@ -337,6 +339,37 @@ impl Fvd for FvdService {
     }
 }
 
+/// fvd's in-process maintenance provider — serves `fastverk.v1.Maintenance`
+/// (the descriptor-driven task interface) for the built-in tasks: `ListTasks`
+/// returns their specs, `RunTask` runs one by id. Out-of-tree tasks ship as
+/// plugins implementing the same service, reached via the plugin router;
+/// `Fvd.MaintainNow` remains the "run all" aggregate.
+#[derive(Default)]
+pub struct MaintenanceService;
+
+#[tonic::async_trait]
+impl Maintenance for MaintenanceService {
+    async fn list_tasks(
+        &self,
+        _request: Request<ListMaintenanceTasksRequest>,
+    ) -> Result<Response<ListMaintenanceTasksResponse>, Status> {
+        Ok(Response::new(ListMaintenanceTasksResponse {
+            specs: fvkit::maintain::specs(),
+        }))
+    }
+
+    async fn run_task(
+        &self,
+        request: Request<RunMaintenanceTaskRequest>,
+    ) -> Result<Response<MaintenanceTask>, Status> {
+        let req = request.into_inner();
+        match fvkit::maintain::run_one(&req.id, req.validate_only).map_err(internal)? {
+            Some(t) => Ok(Response::new(t)),
+            None => Err(Status::not_found(format!("no maintenance task '{}'", req.id))),
+        }
+    }
+}
+
 /// Build fvd's gRPC gateway: its own core services (`fastverk.v1.Fvd`) route
 /// normally, and every *other* service falls through to the generic plugin
 /// router ([`crate::plugins::route`], QueryRPC). We drop down to tonic's
@@ -351,6 +384,7 @@ fn gateway(plugins: Arc<crate::plugins::Registry>) -> Routes {
     // plugin contract) route normally; everything else hits the plugin router.
     let router = Routes::new(FvdServer::new(FvdService::default()))
         .add_service(AuthServer::new(crate::auth::AuthService))
+        .add_service(MaintenanceServer::new(MaintenanceService::default()))
         .into_axum_router()
         .fallback_service(proxy);
     Routes::from(router)
