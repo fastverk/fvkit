@@ -392,6 +392,25 @@ dependencies = [
 name = "fvkit"
 version = "0.0.2"
 dependencies = [
+ "fvkit-bazel",
+ "fvkit-core",
+]
+
+[[package]]
+name = "fvkit-bazel"
+version = "0.0.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "directories",
+ "fvkit-core",
+ "reqwest",
+]
+
+[[package]]
+name = "fvkit-core"
+version = "0.0.2"
+dependencies = [
  "anyhow",
  "base64",
  "chrono",

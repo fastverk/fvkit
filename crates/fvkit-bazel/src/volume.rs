@@ -3,7 +3,7 @@
 //!
 //! On macOS these are APFS volumes in the boot container, created with
 //! `diskutil apfs addVolume` behind an on-demand admin elevation prompt
-//! (see [`crate::platform`]). [`status`] is read-only and safe to call
+//! (see [`fvkit_core::platform`]). [`status`] is read-only and safe to call
 //! anywhere; [`create`] mutates and is P1.
 
 use std::path::Path;
@@ -11,9 +11,9 @@ use std::process::Command;
 
 #[cfg(target_os = "macos")]
 use anyhow::Context;
-use crate::Result;
+use fvkit_core::Result;
 
-use crate::proto::{VolumeAudit, VolumeDisposition, VolumeSpec, VolumeState};
+use fvkit_core::proto::{VolumeAudit, VolumeDisposition, VolumeSpec, VolumeState};
 
 /// The volumes fastverk manages by default.
 #[must_use]
@@ -269,7 +269,7 @@ pub fn create(id: &str, dry_run: bool) -> Result<(Vec<VolumeState>, String)> {
     if dry_run {
         msg.push_str(&format!("would run (admin): {script}"));
     } else {
-        crate::platform::macos::run_elevated(&script).context("create APFS volume(s)")?;
+        fvkit_core::platform::macos::run_elevated(&script).context("create APFS volume(s)")?;
         let names: Vec<String> = to_create.into_iter().map(|s| s.id).collect();
         msg.push_str(&format!("created: {}", names.join(", ")));
     }

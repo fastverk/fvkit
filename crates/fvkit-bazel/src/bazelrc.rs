@@ -9,11 +9,11 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::Result;
+use fvkit_core::Result;
 use anyhow::Context;
 
-use crate::config::Config;
-use crate::paths;
+use fvkit_core::config::Config;
+use fvkit_core::paths;
 
 pub const BEGIN: &str = "# >>> fastverk managed >>>";
 pub const END: &str = "# <<< fastverk managed <<<";
@@ -134,7 +134,7 @@ pub fn apply(cfg: &Config, cred_helper: &Path, validate_only: bool) -> Result<(b
 #[cfg(test)]
 mod tests {
     use super::{managed_block, region_diff, splice, BEGIN, END};
-    use crate::config::Config;
+    use fvkit_core::config::Config;
     use std::path::Path;
 
     #[test]

@@ -13,6 +13,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/fvkit-core",
+    "crates/fvkit-bazel",
     "app/core",
     "app/daemon",
     "app/plugin-echo",

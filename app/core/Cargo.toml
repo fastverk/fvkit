@@ -5,41 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "fastverk core: volumes, ~/.bazelrc, tool provisioning, connections/keychain/OAuth, maintenance, updater. Wrapped by fvd."
+description = "fastverk core (facade): re-exports fvkit-core (platform-neutral substrate) + fvkit-bazel (Bazel surfaces). Wrapped by fvd; consumed by fv + tbzl."
 
 [lib]
 name = "fvkit"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow.workspace = true
-thiserror.workspace = true
-tonic.workspace = true
-prost.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-tracing.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-chrono.workspace = true
-directories.workspace = true
-toml.workspace = true
-reqwest.workspace = true
-tower.workspace = true
-hyper-util.workspace = true
-# PKCE (RFC 7636) for the OAuth authorization-code loopback login flow.
-base64.workspace = true
-getrandom.workspace = true
-ring.workspace = true
-# Verify the OIDC id_token signature (RS256) against the IdP's JWKS.
-jsonwebtoken.workspace = true
-
-# The OS keychain backend is macOS-only for now (Linux Secret Service /
-# Windows Credential Manager are P6); on other targets credstore stubs to
-# the env-fallback path, so fvkit still builds everywhere (e.g. Linux CI).
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring.workspace = true
-mac-notification-sys.workspace = true
-
-[build-dependencies]
-tonic-build.workspace = true
+fvkit-core = { path = "../../crates/fvkit-core" }
+fvkit-bazel = { path = "../../crates/fvkit-bazel" }

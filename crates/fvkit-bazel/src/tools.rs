@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::Result;
+use fvkit_core::Result;
 use anyhow::Context;
 
 use crate::bazelrc;

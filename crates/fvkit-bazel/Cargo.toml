@@ -1,0 +1,19 @@
+[package]
+name = "fvkit-bazel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fastverk Bazel surfaces: the ~/.bazelrc managed region, bazelisk/bazel + cred-helper provisioning, managed volumes, maintenance. Depends on fvkit-core."
+
+[lib]
+name = "fvkit_bazel"
+path = "src/lib.rs"
+
+[dependencies]
+fvkit-core = { path = "../fvkit-core" }
+anyhow.workspace = true
+chrono.workspace = true
+directories.workspace = true
+reqwest.workspace = true

@@ -15,10 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-use crate::Result;
+use fvkit_core::Result;
 
-use crate::config::Config;
-use crate::proto::{MaintenanceReport, MaintenanceTask, MaintenanceTaskSpec, Schedule};
+use fvkit_core::config::Config;
+use fvkit_core::proto::{MaintenanceReport, MaintenanceTask, MaintenanceTaskSpec, Schedule};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const HOUR: u32 = 3600;
