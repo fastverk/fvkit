@@ -9,11 +9,13 @@
 #
 # Rust-via-Cargo-AND-Bazel: the proto is compiled by build.rs (tonic-build)
 # under a cargo_build_script, so the only Bazel codegen dep is protobuf (for
-# protoc). Two workspace members: `fvkit` (lib, app/core) + `fvd` (bin,
-# app/daemon).
+# protoc). The library is split into `fvkit-core` (platform-neutral substrate,
+# owns the proto + version stamp) + `fvkit-bazel` (the ~/.bazelrc / tool / volume
+# / maintenance surfaces), with `fvkit` (app/core) a re-export facade; `fvd`
+# (bin, app/daemon) wraps the facade.
 module(
     name = "fvkit",
-    version = "0.0.7",
+    version = "0.0.8",
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")
