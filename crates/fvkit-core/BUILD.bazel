@@ -1,0 +1,64 @@
+"""fvkit-core — the platform-neutral (non-Bazel) half of the fastverk core.
+
+Proto codegen runs via cargo_build_script + build.rs (tonic-build), the same
+convention services/* use, so `cargo build` and `bazel build` produce identical
+bindings. The build script data-deps the .proto sources exported by
+//proto/fastverk/... and walks `../../proto/...` from CARGO_MANIFEST_DIR =
+`crates/fvkit-core` (i.e. back to the repo-root `proto/`).
+"""
+
+load("@crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    build_script_env = {
+        "PROTOC": "$(execpath @protobuf//:protoc)",
+    },
+    data = [
+        "//proto/fastverk/v1:connection.proto",
+        "//proto/fastverk/v1:fvd.proto",
+        "//proto/fastverk/v1:maintenance.proto",
+        "//proto/fastverk/v1:repos.proto",
+        "//proto/fastverk/plugin/v1:manifest.proto",
+        "//proto/fastverk/identity/v1:auth.proto",
+    ],
+    edition = "2021",
+    tools = ["@protobuf//:protoc"],
+    deps = all_crate_deps(
+        package_name = "crates/fvkit-core",
+        build = True,
+    ),
+)
+
+rust_library(
+    name = "fvkit_core",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    # Stamp the app version (STABLE_FASTVERK_VERSION from workspace_status) into
+    # the build so fvkit_core::version() reports the real release version. The
+    # process-wrapper substitutes {…} from the stamp files; a non-stamp build
+    # leaves the literal, which version() falls back from.
+    rustc_env = {"FASTVERK_VERSION": "{STABLE_FASTVERK_VERSION}"},
+    stamp = 1,
+    deps = [":build_script"] + all_crate_deps(
+        package_name = "crates/fvkit-core",
+        normal = True,
+    ),
+)
+
+rust_test(
+    name = "fvkit_core_test",
+    crate = ":fvkit_core",
+    edition = "2021",
+)
+
+exports_files([
+    "Cargo.toml",
+    "build.rs",
+])

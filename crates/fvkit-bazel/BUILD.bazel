@@ -1,0 +1,32 @@
+"""fvkit-bazel — the Bazel-specific half of the fastverk core.
+
+Ownership of the user's `~/.bazelrc` managed region, bazelisk/bazel + cred-helper
+provisioning, managed filesystem volumes, and the maintenance runners. Depends on
+//crates/fvkit-core for the shared substrate (config, paths, proto, the error
+type). Consumed by `tbzl` directly, and by `fv` via the `fvkit` facade
+(//app/core).
+"""
+
+load("@crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fvkit_bazel",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    deps = ["//crates/fvkit-core:fvkit_core"] + all_crate_deps(
+        package_name = "crates/fvkit-bazel",
+        normal = True,
+    ),
+)
+
+rust_test(
+    name = "fvkit_bazel_test",
+    crate = ":fvkit_bazel",
+    edition = "2021",
+)
+
+exports_files(["Cargo.toml"])
