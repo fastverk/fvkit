@@ -19,6 +19,7 @@ macro_rules! bail {
 pub(crate) use bail;
 
 pub mod bazelrc;
+pub mod invoke;
 pub mod maintain;
 pub mod tools;
 pub mod volume;
