@@ -52,6 +52,25 @@ message ServiceRef {
   string name = 1;
 }
 
+// A web-plane route: how a browser host reaches one (service, method) RPC on
+// this plugin's HTTP/JSON facade. A plugin declares these so the host builds its
+// RPC→REST routing table from the union of every plugin's routes — the plugin
+// OWNS (and ships) its own web routing, rather than the host hardcoding a table
+// per method. gRPC/native hosts ignore these and call the service directly.
+message WebRoute {
+  // Fully-qualified proto service name (matches a `server_services` entry),
+  // e.g. "forge.v1.ForgeDiscovery".
+  string service = 1;
+  // RPC method name on that service, e.g. "ListRepos".
+  string method = 2;
+  // HTTP verb the facade expects: "GET" | "POST" | "PATCH" | "DELETE".
+  string http_method = 3;
+  // Path on the facade, relative to the host's per-plugin gateway prefix
+  // (e.g. "repos", "packages/generate"). May contain "{field}" templates that a
+  // host substitutes from the request; a plain populate route has none.
+  string path = 4;
+}
+
 // A UI contribution. The plugin ships a meridian PanelBundle (.binpb) in its
 // resources; the host composes every plugin's bundle into one panel set.
 message PanelContribution {
@@ -92,6 +111,13 @@ message PluginManifest {
   // Optional server-side backend service names the web/ gateway routes to
   // (same QueryRPC model on the server). Empty = client-only plugin.
   repeated ServiceRef server_services = 11;
+
+  // Web-plane RPC→REST routes: how a browser host reaches each panel RPC on this
+  // plugin's HTTP/JSON facade. The host assembles its routing table from every
+  // plugin's `web_routes` instead of hardcoding one row per (service, method).
+  // Empty = the plugin's panels don't drive the generic RPC invoker (bespoke or
+  // native-only).
+  repeated WebRoute web_routes = 12;
 }
 
 // The QueryRPC "IUnknown": a tiny meta-service every plugin serves so the host
