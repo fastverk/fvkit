@@ -8,4 +8,4 @@
 //! product CLI — can depend on `fvkit-core` directly.
 
 pub use fvkit_core::*;
-pub use fvkit_bazel::{bazelrc, maintain, tools, volume};
+pub use fvkit_bazel::{bazelrc, invoke, maintain, tools, volume};
