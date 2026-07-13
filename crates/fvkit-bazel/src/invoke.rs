@@ -86,6 +86,27 @@ impl Bazel {
             .collect())
     }
 
+    /// Like [`query`], but with `--keep_going`, and best-effort: a broken sibling
+    /// package anywhere in the universe (a bad dep, a dangling ref) returns rdeps over
+    /// the *loadable* graph instead of aborting the whole query. Unlike [`query`] it
+    /// does NOT bail on a nonzero exit — `--keep_going` exits 3 on a partial load but
+    /// still emits the resolvable matches on stdout, so a total failure yields an empty
+    /// vec (the caller's other signals carry the load). Used for affected-test
+    /// reification, where under-scoping to empty is a false-green risk.
+    pub fn query_keep_going(&self, expr: &str) -> Result<Vec<String>> {
+        let out = self
+            .command("query")
+            .arg("--keep_going")
+            .arg(expr)
+            .output()
+            .map_err(|e| fvkit_core::Error::from(anyhow::anyhow!("spawn bazel query: {e}")))?;
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect())
+    }
+
     /// Is `--config=<name>` defined in the workspace's rc files?
     ///
     /// `bazel canonicalize-flags` does NOT error on an undefined config (it's a
