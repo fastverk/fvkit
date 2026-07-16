@@ -54,7 +54,7 @@ jobs:
       - name: schema parity with fastverk/cred-helper
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/fastverk/cred-helper/main/proto/fastverk/v1/connection.proto -o /tmp/cr.proto
+          curl -fsSL https://raw.githubusercontent.com/tomato-bazel/cred-helper/main/proto/fastverk/v1/connection.proto -o /tmp/cr.proto
           norm() { grep -vE '^[[:space:]]*//|^[[:space:]]*$' "$1"; }
           if ! diff <(norm /tmp/cr.proto) <(norm proto/fastverk/v1/connection.proto); then
             echo "::error::connection.proto schema drifted from fastverk/cred-helper. Sync the schema."
