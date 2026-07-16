@@ -20,7 +20,7 @@ rust_binary(
 rust_test(
     name = "fvd_test",
     crate = ":fvd",
-    data = ["//app/plugin-echo:plugin-echo"],
+    data = ["//app/plugin-echo"],
     edition = "2021",
     env = {"ECHO_PLUGIN_BIN": "$(rootpath //app/plugin-echo:plugin-echo)"},
 )
