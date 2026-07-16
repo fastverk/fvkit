@@ -80,6 +80,30 @@ message PanelContribution {
   repeated string adhoc_handler_ids = 2;
 }
 
+// One agent-callable MCP tool this plugin exposes on its `POST /mcp` surface.
+message McpTool {
+  // Tool name as advertised in the plugin's MCP `tools/list`, e.g. "open_mr".
+  string name = 1;
+  // One-line description the model sees when choosing a tool.
+  string description = 2;
+  // Whether the tool mutates state. Mutating tools are confirm-gated: the host
+  // previews the action and only performs it once the user approves (a `confirm`
+  // input the plugin requires). Read tools are safe to call freely.
+  bool mutating = 3;
+}
+
+// A plugin's agent surface: the MCP (Model Context Protocol) tools it serves on
+// `POST /mcp` (Streamable HTTP, JSON-RPC 2.0). Declared here so discovery is
+// static — a host/console can see a plugin is agent-capable, and which tools it
+// offers, from the manifest without a live `tools/list` probe.
+message McpSurface {
+  // The plugin serves `POST /mcp`.
+  bool enabled = 1;
+  // The tools it advertises. Kept in lockstep with the running server by the
+  // plugin facade, which populates it from the same registry it mounts.
+  repeated McpTool tools = 2;
+}
+
 // A plugin's declaration to the host. Shipped (textproto or .binpb) in the
 // plugin's registry module; loaded at registration. gRPC reflection on the
 // running plugin verifies the advertised `services`.
@@ -118,6 +142,10 @@ message PluginManifest {
   // Empty = the plugin's panels don't drive the generic RPC invoker (bespoke or
   // native-only).
   repeated WebRoute web_routes = 12;
+
+  // The plugin's agent surface (the MCP tools it serves on `POST /mcp`). Unset /
+  // `enabled:false` = the plugin contributes no agent tools.
+  McpSurface mcp = 13;
 }
 
 // The QueryRPC "IUnknown": a tiny meta-service every plugin serves so the host

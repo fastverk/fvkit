@@ -50,6 +50,10 @@ fn manifest() -> PluginManifest {
         sidecar_args: vec![],
         panels: vec![],
         server_services: vec![],
+        // Echo serves no `POST /mcp` and contributes no web routes. Defaulting
+        // the rest keeps this example from breaking every time the manifest
+        // gains a field (as `web_routes` did), matching the daemon's pattern.
+        ..Default::default()
     }
 }
 
