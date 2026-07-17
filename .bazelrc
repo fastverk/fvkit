@@ -12,6 +12,16 @@ common --registry=https://bcr.bazel.build/
 # CANNOT carry it — every consumer must set it itself.
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
+# Let cargo build scripts see the execroot. toolchains_llvm passes
+#   -imacros external/toolchains_llvm++llvm+llvm_toolchain/redacted_dates.h
+# as an EXECROOT-RELATIVE path. Bazel runs clang from the execroot so it resolves,
+# but a cargo_build_script (cc-rs) runs from a different cwd and cannot see it:
+#   fatal error: 'external/.../redacted_dates.h' file not found
+# ring is simply the first crate that compiles C, so it takes the blame. This sets
+# RULES_RUST_SYMLINK_EXEC_ROOT=1 so the script's cwd has the execroot tree and the
+# relative -imacros resolves.
+common --@rules_rust//cargo/settings:experimental_symlink_execroot=True
+
 common --action_env=HOME
 
 test --test_output=errors
