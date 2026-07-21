@@ -48,8 +48,23 @@ impl Default for Config {
         Self {
             output_user_root: PathBuf::from("/Volumes/Cache/Bazel/Workspaces"),
             disk_cache: PathBuf::from("/Volumes/Cache/Bazel/disk-cache"),
+            // Order is load-bearing. registry.tbzl.dev first (fastverk modules),
+            // then bcr. Anything private/internal a consumer needs beyond these
+            // goes in their own .bazelrc, listed AFTER bcr — a 401 from an
+            // authenticated registry is hard-inaccessible with no fall-through,
+            // which is what caused the 2026-07-16 fleet outage.
+            //
+            // This was file:///Volumes/Workspace/fastverk/repos/bazel-registry,
+            // a path that does not exist: the real checkouts are
+            // fastverk/fastverk/repos/bazel-registry and
+            // tomato-bazel/bazel-registry. Because a missing file:// registry is
+            // a MISS rather than an error, every generated ~/.bazelrc silently
+            // consulted nothing at position 1 and fell through to whatever came
+            // next — for as long as the default has existed, with no error to
+            // notice. registry.tbzl.dev serves the same 74 modules at identical
+            // version sets and is what the CI image bakes.
             registries: vec![
-                "file:///Volumes/Workspace/fastverk/repos/bazel-registry".to_string(),
+                "https://registry.tbzl.dev/".to_string(),
                 "https://bcr.bazel.build/".to_string(),
             ],
             repos_root: PathBuf::from("/Volumes/Workspace"),
