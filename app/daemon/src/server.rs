@@ -19,7 +19,7 @@ use fvkit::identity_proto::auth_server::AuthServer;
 use fvkit::proto::fvd_server::{Fvd, FvdServer};
 use fvkit::proto::maintenance_server::{Maintenance, MaintenanceServer};
 use fvkit::proto::{
-    ApplyUpdateRequest, ApplyUpdateResponse, BazelrcApplyRequest, BazelrcApplyResponse,
+    ApplyUpdateRequest, ApplyUpdateResponse, AuthKind, BazelrcApplyRequest, BazelrcApplyResponse,
     BazelrcPreviewRequest, BazelrcPreviewResponse, CheckUpdateRequest, CheckUpdateResponse,
     ConnectProviderRequest, ConnectProviderResponse, DisconnectRequest, DisconnectResponse,
     GetCredentialsRequest, GetCredentialsResponse, GetStatusRequest, ListConnectionsRequest,
@@ -88,11 +88,29 @@ impl Fvd for FvdService {
             .filter(|s| !s.is_empty())
             .or_else(|| cfg.client_ids.get(&req.provider).cloned())
             .unwrap_or_default();
+        // ⛔ An API-key provider cannot be connected over this RPC any more: the
+        // request stopped carrying the secret (fvd.proto tag 9, now reserved).
+        // Say that here rather than letting `connect` bail with "needs an API
+        // key", which would tell the caller to supply something the wire has no
+        // field for. An unknown provider falls through on purpose — `connect`
+        // already reports that case accurately.
+        if fvkit::connections::preset(&req.provider, &req.host, &client_id)
+            .map(|c| c.auth_kind() == AuthKind::ApiKey)
+            .unwrap_or(false)
+        {
+            return Err(Status::invalid_argument(format!(
+                "provider {} authenticates with an API key, which this RPC does not carry; \
+                 connect it from the fastverk settings window",
+                req.provider
+            )));
+        }
         let params = fvkit::connections::ConnectParams {
             provider: req.provider,
             host: req.host,
             client_id,
-            api_key: req.api_key,
+            // Always empty: see above. `ConnectParams.api_key` stays because the
+            // settings window fills it on the in-process path.
+            api_key: String::new(),
         };
         // The device flow blocks on the user authorizing; keep it off the
         // async reactor. (Streaming the user-code to the client is a P3

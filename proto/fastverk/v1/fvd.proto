@@ -127,9 +127,19 @@ message ConnectProviderRequest {
   AuthKind auth_kind = 7;
   // OAuth config for AUTH_KIND_OAUTH connections.
   OAuthConfig oauth = 8;
-  // For AUTH_KIND_API_KEY: the key value to store. Never persisted to
-  // the registry — written straight to the keychain.
-  string api_key = 9;
+
+  // Tag 9 was `string api_key` — the AUTH_KIND_API_KEY secret, carried in
+  // plaintext on this request. It is gone because nothing ever sent it: the
+  // one place a user types an API key is the settings window, and that calls
+  // `fvkit::connections::connect` in-process rather than over this RPC. The
+  // secret therefore never needed to cross the IPC boundary at all.
+  //
+  // ⛔ Never reuse tag 9. proto3 decodes by tag, not by name, so a stale
+  // client that still sets the old field would have its plaintext secret
+  // silently parsed into whatever new field claimed 9.
+  reserved 9;
+  reserved "api_key";
+
   // Instance host for the provider preset, e.g. "github.com",
   // "github.acme.com" (GitHub Enterprise), "gitlab.savvifi.com". Empty =
   // the provider's default host. Lets the same provider be connected
