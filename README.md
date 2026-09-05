@@ -1,3 +1,17 @@
+> [!IMPORTANT]
+> **This repository is retired.** `fvkit` is developed in the
+> [`fastverk/desktop`](https://github.com/fastverk/desktop) ship vehicle, at
+> [`fvkit/`](https://github.com/fastverk/desktop/tree/main/fvkit). Open issues and
+> pull requests there.
+>
+> The published module is unchanged — `bazel_dep(name = "fvkit", version = "0.0.8")`
+> resolves exactly as before. This remote keeps its full history and every tag, so
+> existing registry entries and `git_override` pins stay valid.
+>
+> Retired at [`ca638b9`](https://github.com/fastverk/fvkit/commit/ca638b99462a0c9433bfc9845832568044829d31),
+> the commit the vehicle imported — nothing here is unimported. Background:
+> [Consolidation](https://docs.fastverk.com/consolidation.html).
+
 # fvkit
 
 The fastverk core/runtime module: the platform-abstracted machinery the
